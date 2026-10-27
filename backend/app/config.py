@@ -3,9 +3,9 @@ from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    HOST: str = "127.0.0.1"
-    PORT: int = 8000
-    ENVIRONMENT: str = "development"
+    HOST: str = os.environ.get("HOST", "0.0.0.0")
+    PORT: int = int(os.environ.get("PORT", "8000"))
+    ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "development")
     LOG_LEVEL: str = "info"
 
     # Security & JWT
@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
     # CORS
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,*"
 
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./vaultroom.db"
@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     # AI Anomaly Guard
     ANOMALY_DETECTION_MODE: str = "hybrid"  # "synthetic_demo", "real_baseline", "hybrid"
     ANOMALY_CONTAMINATION: float = 0.05
+
+    @property
+    def normalized_database_url(self) -> str:
+        url = self.DATABASE_URL
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        if url.startswith("postgresql://") and not url.startswith("postgresql+"):
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
 
     @property
     def cors_origins_list(self) -> List[str]:

@@ -5,7 +5,7 @@ from app.database.models import Base
 
 # Create async engine
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    settings.normalized_database_url,
     echo=False,
     future=True
 )

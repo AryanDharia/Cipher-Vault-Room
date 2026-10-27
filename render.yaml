@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: cipher-vault-room
+    runtime: python
+    plan: free
+    buildCommand: ./build.sh
+    startCommand: cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: NODE_VERSION
+        value: 20.11.0
+      - key: ENVIRONMENT
+        value: production
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cipher-vault-postgres
+          property: connectionString
+
+databases:
+  - name: cipher-vault-postgres
+    plan: free
+    databaseName: cipher_vault
+    user: cipher_admin

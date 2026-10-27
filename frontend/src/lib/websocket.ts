@@ -40,7 +40,12 @@ export class VaultWebSocket {
     }
 
     this.setState('connecting');
-    const wsUrl = `ws://localhost:8000/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    // Use current origin's host; if running Vite on 5173, point directly to backend port 8000
+    const host = window.location.port === '5173'
+      ? `${window.location.hostname}:8000`
+      : window.location.host;
+    const wsUrl = `${protocol}//${host}/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
 
     try {
       this.ws = new WebSocket(wsUrl);

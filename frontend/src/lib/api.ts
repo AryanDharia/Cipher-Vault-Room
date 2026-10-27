@@ -2,7 +2,8 @@
  * VaultRoom API Client
  */
 
-const API_BASE = 'http://localhost:8000/api';
+// In single-service Render architecture and production, all API calls are relative to the current origin
+const API_BASE = '/api';
 
 class ApiClient {
   private token: string | null = null;

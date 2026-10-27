@@ -98,6 +98,26 @@ The developer console will be accessible at:
 
 ---
 
+## Production Deployment on Render (Single-Service)
+
+Cipher Vault Room is configured to deploy to Render under **ONE public URL and ONE Web Service** serving both the frontend and backend:
+
+1. **Push to GitHub**: Repository `https://github.com/AryanDharia/Cipher-Vault-Room.git`.
+2. **Render Web Service Settings**:
+   - **Build Command**: `./build.sh`
+   - **Start Command**: `cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - **Health Check Path**: `/api/health`
+3. **Environment Variables**:
+   - `PYTHON_VERSION`: `3.11.9`
+   - `NODE_VERSION`: `20.11.0`
+   - `ENVIRONMENT`: `production`
+   - `JWT_SECRET_KEY`: `<secure random 32+ char hex>`
+   - `DATABASE_URL`: `<Render PostgreSQL connection string>`
+
+FastAPI automatically serves the built React SPA from `frontend/dist`, forwards `/api/` to REST routes, connects `/ws/` to WebSockets with `wss://` TLS support, and provides deep-link SPA fallback for room URLs.
+
+---
+
 ## Running the Automated Test Suite
 
 ```bash

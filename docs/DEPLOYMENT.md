@@ -1,35 +1,73 @@
-# VaultRoom Deployment & Production Operations Guide
+# VaultRoom / Cipher Vault Room Deployment Guide
 
-This guide details requirements and procedures for deploying VaultRoom to secure hosting environments.
-
----
-
-## 1. Production Architecture Overview
-
-- **Frontend**: Static React single-page application served via Cloudflare Pages, Vercel, AWS S3/CloudFront, or Nginx.
-- **Backend**: FastAPI ASGI service served with `uvicorn` behind an SSL termination reverse proxy (Nginx, Traefik, or AWS ALB) with WebSocket forwarding.
-- **Database**: Managed PostgreSQL with TLS enforcement.
+This guide details requirements and procedures for deploying Cipher Vault Room as a **single-service Web Service on Render** (ONE public URL and ONE Web Service serving both frontend and backend) or on custom server infrastructure.
 
 ---
 
-## 2. Environment Variables Checklist
+## 1. Single-Service Architecture on Render
 
-Set these values in your production environment (e.g. systemd service, Docker Compose, or cloud secrets manager):
-
-| Variable | Description | Production Recommendation |
-|---|---|---|
-| `ENVIRONMENT` | Runtime environment | `production` |
-| `HOST` | Backend bind address | `0.0.0.0` |
-| `PORT` | Backend listen port | `8000` |
-| `JWT_SECRET_KEY` | 256-bit secret for signing access tokens | Minimum 64-character random hex string |
-| `DATABASE_URL` | SQLAlchemy async connection string | `postgresql+asyncpg://user:pass@host:5432/vaultroom` |
-| `CORS_ORIGINS` | Allowed frontend origins | Exact production domain (e.g. `https://vault.company.com`) |
-| `ROOM_CODE_EXPIRY_HOURS` | Lifetime for inactive room codes | `24` |
-| `ANOMALY_DETECTION_MODE` | Guard mode | `hybrid` or `real_baseline` |
+Cipher Vault Room is built with a unified single-service architecture:
+- **Unified Origin**: FastAPI serves both the REST API (`/api/`), real-time WebSockets (`/ws/`), and the built React/TipTap single-page application (`index.html`, `/assets/`, with SPA catch-all routing).
+- **Zero Insecure Cross-Origin Issues**: Because frontend and backend live under the exact same domain, cookies, authentication headers, and WebSocket connections (`wss://`) connect seamlessly without CORS or mixed-content hurdles.
+- **Database**: PostgreSQL on Render (managed) or SQLite for local development.
 
 ---
 
-## 3. Reverse Proxy & WebSocket Configuration (Nginx Example)
+## 2. Deploy to Render (Step-by-Step)
+
+### Option A: Automated via Render Blueprint (`render.yaml`)
+
+1. Push this repository to GitHub (`AryanDharia/Cipher-Vault-Room`).
+2. Log in to [Render Dashboard](https://dashboard.render.com).
+3. Click **New +** -> **Blueprint**.
+4. Connect the `Cipher-Vault-Room` repository.
+5. Render reads `render.yaml` and provisions:
+   - **Web Service**: `cipher-vault-room` (Python runtime, running `./build.sh` and `uvicorn`).
+   - **PostgreSQL Database**: `cipher-vault-postgres` (auto-wires `DATABASE_URL` with SSL).
+6. Click **Apply**. Deployment will build the React SPA, install Python packages, initialize database tables, and go live on your single Render `.onrender.com` URL.
+
+### Option B: Manual Web Service Setup on Render
+
+If creating the Web Service manually:
+
+1. Click **New +** -> **Web Service**.
+2. Connect your `Cipher-Vault-Room` repository.
+3. Configure the following settings:
+   - **Name**: `cipher-vault-room`
+   - **Runtime**: `Python 3`
+   - **Branch**: `main`
+   - **Build Command**: `./build.sh`
+   - **Start Command**: `cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - **Health Check Path**: `/api/health`
+4. Add Environment Variables:
+   | Key | Value | Notes |
+   |---|---|---|
+   | `PYTHON_VERSION` | `3.11.9` | Ensures Python 3.11+ |
+   | `NODE_VERSION` | `20.11.0` | Enables Node 20 for Vite build |
+   | `ENVIRONMENT` | `production` | Enables production mode |
+   | `JWT_SECRET_KEY` | `<generate random 64-char hex>` | Token signing key |
+   | `DATABASE_URL` | `<internal connection string>` | Render PostgreSQL connection string |
+5. Click **Deploy Web Service**.
+
+---
+
+## 3. How the Build & Runtime Works
+
+1. **`build.sh`**:
+   - Runs `npm install` and `npm run build` in `/frontend`, compiling the React app to `/frontend/dist`.
+   - Runs `pip install -r requirements.txt` in `/backend`, installing FastAPI, uvicorn, SQLAlchemy, asyncpg, Argon2id, and dependencies.
+2. **`app/main.py`**:
+   - Automatically detects Render's `$PORT` and binds to `0.0.0.0`.
+   - Mounts `/assets` from `/frontend/dist/assets`.
+   - Handles SPA catch-all routing (`/{full_path:path}`) returning `index.html` for deep links (e.g. `/rooms/ABC123`).
+   - Translates `postgres://` URLs into SQLAlchemy's async driver `postgresql+asyncpg://`.
+   - Calls `init_db()` on startup to create all database tables automatically.
+3. **Health Check**:
+   - `/api/health` returns HTTP 200 with service status, active rooms count, and zero-knowledge enforcement flag.
+
+---
+
+## 4. Reverse Proxy & WebSocket Configuration (Nginx Alternative)
 
 ```nginx
 server {
