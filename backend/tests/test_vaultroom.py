@@ -64,20 +64,49 @@ async def test_full_auth_and_room_lifecycle():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         import uuid
         uid = uuid.uuid4().hex[:6]
-        # 1. Register User 1 (Alice)
+        # 1. Register User 1 (Alice) - Username & Password ONLY
         u1_res = await client.post("/api/auth/register", json={
             "username": f"alice_{uid}",
-            "email": f"alice_{uid}@example.com",
             "password": "Password123!"
         })
         assert u1_res.status_code == 200
         alice_token = u1_res.json()["access_token"]
         alice_headers = {"Authorization": f"Bearer {alice_token}"}
+        assert "email" not in u1_res.json()["user"]
 
-        # 2. Register User 2 (Bob)
+        # 1b. Test Duplicate Username Rejection
+        dup_res = await client.post("/api/auth/register", json={
+            "username": f"alice_{uid}",
+            "password": "DifferentPassword!"
+        })
+        assert dup_res.status_code == 400
+        assert "already registered" in dup_res.json()["detail"]
+
+        # 1c. Test Malformed / Short Username Rejection
+        short_res = await client.post("/api/auth/register", json={
+            "username": "ab",
+            "password": "Password123!"
+        })
+        assert short_res.status_code in (400, 422)
+
+        # 1d. Test Wrong Password Login Rejection
+        wrong_pw_res = await client.post("/api/auth/login", json={
+            "username": f"alice_{uid}",
+            "password": "WrongPassword123!"
+        })
+        assert wrong_pw_res.status_code == 401
+
+        # 1e. Test Successful Login - Username & Password ONLY
+        login_res = await client.post("/api/auth/login", json={
+            "username": f"alice_{uid}",
+            "password": "Password123!"
+        })
+        assert login_res.status_code == 200
+        assert "access_token" in login_res.json()
+
+        # 2. Register User 2 (Bob) - Username & Password ONLY
         u2_res = await client.post("/api/auth/register", json={
             "username": f"bob_{uid}",
-            "email": f"bob_{uid}@example.com",
             "password": "Password123!"
         })
         assert u2_res.status_code == 200

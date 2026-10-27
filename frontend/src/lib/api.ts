@@ -33,10 +33,18 @@ class ApiClient {
       headers.set('Content-Type', 'application/json');
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch (err: any) {
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        throw new Error('VaultRoom backend server is unreachable. Please ensure the backend is running on http://localhost:8000.');
+      }
+      throw new Error(`Connection failed: ${err.message || 'Unable to communicate with server'}`);
+    }
 
     if (!response.ok) {
       let errorMsg = `HTTP ${response.status}`;
@@ -53,7 +61,7 @@ class ApiClient {
   }
 
   // Auth
-  async register(data: { username: string; email: string; password: string }) {
+  async register(data: { username: string; password: string }) {
     const res = await this.request<{ access_token: string; user: any }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -62,7 +70,7 @@ class ApiClient {
     return res;
   }
 
-  async login(data: { username_or_email: string; password: string }) {
+  async login(data: { username: string; password: string }) {
     const res = await this.request<{ access_token: string; user: any }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(data),

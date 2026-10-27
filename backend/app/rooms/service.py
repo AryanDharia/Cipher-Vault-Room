@@ -165,7 +165,6 @@ class RoomService:
                 "id": member.id,
                 "user_id": user.id,
                 "username": user.username,
-                "email": user.email,
                 "role": member.role,
                 "joined_at": member.joined_at.isoformat(),
                 "last_seen_at": member.last_seen_at.isoformat()
