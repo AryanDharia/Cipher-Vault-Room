@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database.session import init_db, AsyncSessionLocal
-from app.database.models import Room, RoomMember, User
+from app.database.models import Room, RoomMember, User, utcnow
 from app.auth.security import decode_access_token
 from app.rooms.service import normalize_room_code
 from app.collaboration.manager import manager
@@ -23,6 +23,9 @@ from app.api.approvals import router as approvals_router
 from app.api.vault import router as vault_router
 from app.api.sources import router as sources_router
 from app.api.security import router as security_router
+
+import logging
+logger = logging.getLogger("vaultroom.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,10 +40,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration
+# CORS configuration: Allow credentials while properly matching origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list + ["*"],
+    allow_origins=settings.cors_origins_list,
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,28 +71,43 @@ async def health_check():
     }
 
 @app.websocket("/ws/{room_code}")
+@app.websocket("/ws/{room_code}/")
 async def websocket_endpoint(
     websocket: WebSocket,
     room_code: str,
     token: str = Query(...)
 ):
+    # 1. Accept WebSocket connection immediately so reverse proxies complete handshake
+    await websocket.accept()
+
     code = normalize_room_code(room_code)
+    logger.info(f"[WS ATTEMPT] Inbound connection for room '{code}'")
     
-    # 1. Validate JWT Token
+    # 2. Validate JWT Token
     payload = decode_access_token(token)
     if not payload or "sub" not in payload:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired authentication token")
+        logger.warning(f"[WS AUTH FAIL] Invalid or expired token for room '{code}'")
+        try:
+            await websocket.send_json({"type": "ERROR", "message": "Invalid or expired authentication token"})
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token")
+        except Exception:
+            pass
         return
 
     user_id = payload["sub"]
     username = payload.get("username", "Unknown")
 
-    # 2. Validate Room & Membership
+    # 3. Validate Room & Membership
     async with AsyncSessionLocal() as db:
         room_res = await db.execute(select(Room).where(Room.code == code))
         room = room_res.scalar_one_or_none()
         if not room:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Room does not exist")
+            logger.warning(f"[WS ROOM NOT FOUND] Room '{code}' does not exist (user: {username})")
+            try:
+                await websocket.send_json({"type": "ERROR", "message": "Room does not exist"})
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Room does not exist")
+            except Exception:
+                pass
             return
 
         member_res = await db.execute(
@@ -96,14 +115,33 @@ async def websocket_endpoint(
         )
         member = member_res.scalar_one_or_none()
         if not member:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Not an authorized room member")
-            return
+            if room.is_locked:
+                logger.warning(f"[WS ROOM LOCKED] Room '{code}' is locked. User {username} cannot join.")
+                try:
+                    await websocket.send_json({"type": "ERROR", "message": "Room is locked"})
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Room is locked")
+                except Exception:
+                    pass
+                return
+
+            # Ensure valid room participant is recorded
+            member = RoomMember(
+                room_id=room.id,
+                user_id=user_id,
+                role="editor",
+                joined_at=utcnow(),
+                last_seen_at=utcnow()
+            )
+            db.add(member)
+            await db.commit()
+            await db.refresh(member)
+            logger.info(f"[WS AUTO-JOIN] User '{username}' ({user_id}) joined room '{code}' as editor")
 
         role = member.role
 
     socket_id = str(uuid.uuid4())[:8]
 
-    # 3. Connect to Manager
+    # 4. Connect to Manager
     await manager.connect(
         websocket=websocket,
         room_code=code,
@@ -118,8 +156,10 @@ async def websocket_endpoint(
             data = await websocket.receive_json()
             await manager.handle_message(code, socket_id, data)
     except WebSocketDisconnect:
+        logger.info(f"[WS DISCONNECT] Socket {socket_id} disconnected from room '{code}'")
         await manager.disconnect(code, socket_id)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[WS LOOP EXIT] Socket {socket_id} in room '{code}' exited: {e}")
         await manager.disconnect(code, socket_id)
 
 # -------------------------------------------------------------

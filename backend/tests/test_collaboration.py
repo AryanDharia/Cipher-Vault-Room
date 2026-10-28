@@ -114,3 +114,74 @@ async def test_two_client_collaboration_and_presence():
     # Clean up Bob
     await manager.disconnect(room_code, "sock_bob_2")
     assert room_code not in manager.active_rooms
+
+from fastapi.testclient import TestClient
+from app.auth.security import create_access_token
+from app.rooms.service import RoomService
+from app.database.session import AsyncSessionLocal
+from app.database.models import User
+from app.auth.security import hash_password
+
+def test_websocket_endpoint_e2e_two_clients():
+    """
+    Test real HTTP/ASGI WebSocket connection over Starlette TestClient:
+    - Creates Alice and Bob in DB.
+    - Alice creates a room.
+    - Alice and Bob connect via WebSocket with JWT tokens.
+    - Alice sends YJS_UPDATE, Bob receives it.
+    - Reconnection verification.
+    """
+    import asyncio
+    
+    async def create_users_and_room():
+        async with AsyncSessionLocal() as db:
+            alice = User(username=f"alice_{uuid.uuid4().hex[:6]}", password_hash=hash_password("pass123"), role="user")
+            bob = User(username=f"bob_{uuid.uuid4().hex[:6]}", password_hash=hash_password("pass123"), role="user")
+            db.add(alice)
+            db.add(bob)
+            await db.commit()
+            await db.refresh(alice)
+            await db.refresh(bob)
+            
+            room = await RoomService.create_room(db, alice, name="Test Collaboration Room")
+            return alice, bob, room
+
+    alice, bob, room = asyncio.run(create_users_and_room())
+
+    token_alice = create_access_token({"sub": alice.id, "username": alice.username, "role": alice.role})
+    token_bob = create_access_token({"sub": bob.id, "username": bob.username, "role": bob.role})
+
+    client = TestClient(app)
+
+    with client.websocket_connect(f"/ws/{room.code}?token={token_alice}") as ws_alice:
+        init_alice = ws_alice.receive_json()
+        assert init_alice["type"] == "ROOM_CONNECTED"
+        assert init_alice["room_code"] == room.code
+
+        with client.websocket_connect(f"/ws/{room.code}?token={token_bob}") as ws_bob:
+            init_bob = ws_bob.receive_json()
+            assert init_bob["type"] == "ROOM_CONNECTED"
+
+            # Alice receives USER_JOINED for Bob
+            joined_msg = ws_alice.receive_json()
+            assert joined_msg["type"] == "USER_JOINED"
+            assert joined_msg["username"] == bob.username
+
+            # Alice sends YJS_UPDATE
+            ws_alice.send_json({
+                "type": "YJS_UPDATE",
+                "document_id": "doc_xyz",
+                "encrypted_payload": "E2EE_PAYLOAD_TEST"
+            })
+
+            # Bob receives YJS_UPDATE
+            update_msg = ws_bob.receive_json()
+            assert update_msg["type"] == "YJS_UPDATE"
+            assert update_msg["document_id"] == "doc_xyz"
+            assert update_msg["encrypted_payload"] == "E2EE_PAYLOAD_TEST"
+
+            # Ping Pong check
+            ws_bob.send_json({"type": "PING"})
+            pong_msg = ws_bob.receive_json()
+            assert pong_msg["type"] == "PONG"
+

@@ -36,6 +36,7 @@ export function App() {
   const [onlineUsers, setOnlineUsers] = useState<RoomUser[]>([]);
   const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [remoteDeltas, setRemoteDeltas] = useState<any[]>([]);
+  const [latestDelta, setLatestDelta] = useState<any | null>(null);
 
   // UI state
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
@@ -177,13 +178,24 @@ export function App() {
       refreshDocuments();
     });
 
+    ws.on('DOCUMENT_UPDATED', (data) => {
+      console.log(`[App] DOCUMENT_UPDATED received for: ${data.doc_id}`);
+      refreshDocuments();
+    });
+
     const handleIncomingDelta = (data: any) => {
-      setRemoteDeltas((prev) => [...prev, data]);
+      setLatestDelta(data);
+      setRemoteDeltas((prev) => [...prev.slice(-10), data]);
     };
 
     ws.on('YJS_UPDATE', handleIncomingDelta);
     ws.on('ENCRYPTED_DELTA', handleIncomingDelta);
     ws.on('DOC_SYNC_STEP', handleIncomingDelta);
+
+    ws.on('AUTH_EXPIRED', () => {
+      api.setToken(null);
+      setUser(null);
+    });
 
     ws.on('THRESHOLD_APPROVAL_REQUESTED', () => {
       refreshApprovals();
@@ -576,6 +588,7 @@ export function App() {
               currentUserRole={currentUserRole}
               onSaveDocument={handleSaveDocument}
               onBroadcastDelta={handleBroadcastDelta}
+              latestDelta={latestDelta}
               remoteDeltas={remoteDeltas}
             />
 

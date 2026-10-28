@@ -30,7 +30,8 @@ interface EditorViewProps {
   currentUserRole: string;
   onSaveDocument: (docId: string, encryptedEnvelope: string) => Promise<void>;
   onBroadcastDelta: (docId: string, encryptedPayload: string) => void;
-  remoteDeltas: any[];
+  latestDelta?: any;
+  remoteDeltas?: any[];
 }
 
 export const EditorView: React.FC<EditorViewProps> = ({
@@ -41,6 +42,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   currentUserRole,
   onSaveDocument,
   onBroadcastDelta,
+  latestDelta,
   remoteDeltas,
 }) => {
   const [plaintext, setPlaintext] = useState<string>('');
@@ -170,12 +172,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   // Handle remote incoming deltas
   useEffect(() => {
-    if (!remoteDeltas || remoteDeltas.length === 0 || !roomKey || !editor) return;
-    const latest = remoteDeltas[remoteDeltas.length - 1];
-    if (latest.document_id === doc?.id) {
-      decryptEnvelope(latest.encrypted_payload, roomKey).then((incomingText) => {
+    const delta = latestDelta || (remoteDeltas && remoteDeltas.length > 0 ? remoteDeltas[remoteDeltas.length - 1] : null);
+    if (!delta || !roomKey || !editor || !doc) return;
+
+    if (delta.document_id === doc.id) {
+      decryptEnvelope(delta.encrypted_payload, roomKey).then((incomingText) => {
         const currentContent = editor.getHTML();
         if (incomingText && incomingText !== currentContent) {
+          console.log(`[Editor] Applied real-time remote delta for document: ${doc.id}`);
           isRemoteUpdateRef.current = true;
           // In TipTap, passing false as second argument suppresses the onUpdate event
           editor.commands.setContent(incomingText, false);
@@ -185,9 +189,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
             isRemoteUpdateRef.current = false;
           }, 80);
         }
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error('[Editor] Failed to decrypt remote delta. Verify room passphrase:', err);
+      });
     }
-  }, [remoteDeltas, editor, doc?.id, roomKey]);
+  }, [latestDelta, remoteDeltas, editor, doc?.id, roomKey]);
 
   // Encrypt & Save Document
   const handleSave = async () => {

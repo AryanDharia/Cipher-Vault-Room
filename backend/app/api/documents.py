@@ -170,6 +170,15 @@ async def update_document(
     doc.updated_at = utcnow()
     await db.commit()
 
+    # Broadcast document change so other participants' document lists and states update
+    await manager.broadcast(room.code, {
+        "type": "DOCUMENT_UPDATED",
+        "doc_id": doc.id,
+        "title": doc.title,
+        "version": doc.version,
+        "updated_at": doc.updated_at.isoformat()
+    })
+
     return {
         "id": doc.id,
         "title": doc.title,

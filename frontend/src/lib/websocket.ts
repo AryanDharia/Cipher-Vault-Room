@@ -26,80 +26,136 @@ export class VaultWebSocket {
   private state: ConnectionState = 'disconnected';
   private reconnectAttempts = 0;
   private pingInterval: number | null = null;
+  private lastActivity = Date.now();
+  private watchdogInterval: number | null = null;
+  private messageQueue: any[] = [];
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private stateListeners: Set<(state: ConnectionState) => void> = new Set();
+  private isExplicitlyClosed = false;
 
   constructor(roomCode: string, token: string) {
-    this.roomCode = roomCode;
+    this.roomCode = roomCode.trim().toUpperCase();
     this.token = token;
   }
 
+  public getWsUrl(): string {
+    // 1. Check if VITE_WS_URL environment variable is provided
+    const envWs = import.meta.env.VITE_WS_URL;
+    if (envWs) {
+      const base = envWs.endsWith('/') ? envWs.slice(0, -1) : envWs;
+      return `${base}/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
+    }
+
+    // 2. Dynamic origin detection (Works locally & on Render single-service)
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+    // If running in local Vite development server on port 5173/5174/etc, target backend port 8000
+    const host = isLocalDev && window.location.port !== '8000'
+      ? `${window.location.hostname}:8000`
+      : window.location.host;
+
+    return `${protocol}//${host}/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
+  }
+
   public connect() {
+    this.isExplicitlyClosed = false;
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
     this.setState('connecting');
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    // If in local dev and running on a Vite/dev port (e.g. 5173, 5174, etc.), connect directly to backend 8000.
-    // In production (Render single-service), connect directly to window.location.host.
-    const host = isLocalDev && window.location.port !== '8000'
-      ? `${window.location.hostname}:8000`
-      : window.location.host;
-    const wsUrl = `${protocol}//${host}/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
+    const wsUrl = this.getWsUrl();
+    const redactedUrl = wsUrl.replace(/token=([^&]+)/, 'token=[REDACTED]');
+    console.log(`[VaultWebSocket] Connecting to: ${redactedUrl}`);
 
     try {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
+        console.log(`[VaultWebSocket] Connection established for room: ${this.roomCode}`);
         this.reconnectAttempts = 0;
+        this.lastActivity = Date.now();
         this.setState('connected');
         this.startHeartbeat();
+        this.flushQueue();
       };
 
       this.ws.onmessage = (event) => {
+        this.lastActivity = Date.now();
         try {
           const msg = JSON.parse(event.data);
+          if (msg.type !== 'PONG') {
+            console.log(`[VaultWebSocket] Received event: ${msg.type}`);
+          }
           this.emit(msg.type, msg);
         } catch {
           // ignore corrupted packets
         }
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         this.stopHeartbeat();
+        console.warn(`[VaultWebSocket] Closed (code: ${event.code}, reason: "${event.reason || 'None'}", clean: ${event.wasClean})`);
         this.setState('disconnected');
-        this.scheduleReconnect();
+
+        if (!this.isExplicitlyClosed) {
+          // Don't reconnect if auth policy was explicitly violated
+          if (event.code === 1008 && event.reason?.includes('expired')) {
+            console.error('[VaultWebSocket] Token expired or invalid. Authentication required.');
+            this.emit('AUTH_EXPIRED', { reason: event.reason });
+            return;
+          }
+          this.scheduleReconnect();
+        }
       };
 
-      this.ws.onerror = () => {
-        this.stopHeartbeat();
-        this.setState('disconnected');
+      this.ws.onerror = (err) => {
+        console.error('[VaultWebSocket] Error event encountered:', err);
       };
-    } catch {
+    } catch (err) {
+      console.error('[VaultWebSocket] Constructor exception:', err);
       this.setState('disconnected');
-      this.scheduleReconnect();
+      if (!this.isExplicitlyClosed) {
+        this.scheduleReconnect();
+      }
     }
   }
 
   private scheduleReconnect() {
-    if (this.reconnectAttempts > 15) return;
+    if (this.reconnectAttempts > 25) {
+      console.warn('[VaultWebSocket] Maximum reconnect attempts reached.');
+      return;
+    }
     this.reconnectAttempts++;
     this.setState('reconnecting');
-    const delay = Math.min(500 * Math.pow(1.3, this.reconnectAttempts), 5000);
+    const delay = Math.min(400 * Math.pow(1.3, this.reconnectAttempts), 8000);
+    console.log(`[VaultWebSocket] Attempting reconnect in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts})...`);
     setTimeout(() => {
-      this.connect();
+      if (!this.isExplicitlyClosed) {
+        this.connect();
+      }
     }, delay);
   }
 
   private startHeartbeat() {
     this.stopHeartbeat();
+
+    // 1. Send PING every 15s to keep Render reverse proxy connection alive
     this.pingInterval = window.setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: 'PING' }));
       }
     }, 15000);
+
+    // 2. Watchdog: If no message or PONG in 45s, connection is stale -> force reconnect
+    this.watchdogInterval = window.setInterval(() => {
+      if (Date.now() - this.lastActivity > 45000) {
+        console.warn('[VaultWebSocket] Stale socket detected (no activity in 45s). Forcing reconnect...');
+        this.disconnect(false);
+        this.connect();
+      }
+    }, 10000);
   }
 
   private stopHeartbeat() {
@@ -107,11 +163,43 @@ export class VaultWebSocket {
       clearInterval(this.pingInterval);
       this.pingInterval = null;
     }
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval);
+      this.watchdogInterval = null;
+    }
   }
 
   public send(data: any) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data));
+      try {
+        this.ws.send(JSON.stringify(data));
+      } catch (err) {
+        console.error('[VaultWebSocket] Send error, enqueuing:', err);
+        this.messageQueue.push(data);
+      }
+    } else {
+      // Buffer outgoing messages during temporary reconnects
+      if (this.messageQueue.length > 50) {
+        this.messageQueue.shift(); // Evict oldest
+      }
+      this.messageQueue.push(data);
+      console.log(`[VaultWebSocket] Buffered message (type: ${data.type}) while disconnected. Queue depth: ${this.messageQueue.length}`);
+    }
+  }
+
+  private flushQueue() {
+    if (this.messageQueue.length === 0 || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    console.log(`[VaultWebSocket] Flushing ${this.messageQueue.length} queued messages to server...`);
+    while (this.messageQueue.length > 0) {
+      const msg = this.messageQueue.shift();
+      try {
+        this.ws.send(JSON.stringify(msg));
+      } catch (err) {
+        console.error('[VaultWebSocket] Error while flushing queue:', err);
+        break;
+      }
     }
   }
 
@@ -141,11 +229,15 @@ export class VaultWebSocket {
   }
 
   private setState(state: ConnectionState) {
-    this.state = state;
-    this.stateListeners.forEach((h) => h(state));
+    if (this.state !== state) {
+      this.state = state;
+      console.log(`[VaultWebSocket] State changed to: ${state}`);
+      this.stateListeners.forEach((h) => h(state));
+    }
   }
 
-  public disconnect() {
+  public disconnect(explicit = true) {
+    this.isExplicitlyClosed = explicit;
     this.stopHeartbeat();
     if (this.ws) {
       this.ws.close();

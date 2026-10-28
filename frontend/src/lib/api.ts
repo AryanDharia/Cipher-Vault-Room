@@ -2,8 +2,8 @@
  * VaultRoom API Client
  */
 
-// In single-service Render architecture and production, all API calls are relative to the current origin
-const API_BASE = '/api';
+// Support explicit environment variable VITE_API_URL or default to relative /api
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 class ApiClient {
   private token: string | null = null;
