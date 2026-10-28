@@ -1,7 +1,7 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Room, RoomMember, User, AuditEvent, utcnow
@@ -87,7 +87,7 @@ class RoomService:
         normalized = normalize_room_code(code)
         if not normalized:
             return None
-        result = await db.execute(select(Room).where(Room.code == normalized))
+        result = await db.execute(select(Room).where(func.upper(Room.code) == normalized))
         return result.scalar_one_or_none()
 
     @staticmethod

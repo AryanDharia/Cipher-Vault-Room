@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.config import settings
 from app.database.session import init_db, AsyncSessionLocal
@@ -99,7 +99,7 @@ async def websocket_endpoint(
 
     # 3. Validate Room & Membership
     async with AsyncSessionLocal() as db:
-        room_res = await db.execute(select(Room).where(Room.code == code))
+        room_res = await db.execute(select(Room).where(func.upper(Room.code) == code))
         room = room_res.scalar_one_or_none()
         if not room:
             logger.warning(f"[WS ROOM NOT FOUND] Room '{code}' does not exist (user: {username})")
