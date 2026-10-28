@@ -24,14 +24,31 @@ from app.api.vault import router as vault_router
 from app.api.sources import router as sources_router
 from app.api.security import router as security_router
 
+import asyncio
 import logging
 logger = logging.getLogger("vaultroom.main")
+
+async def connection_watchdog():
+    while True:
+        try:
+            await asyncio.sleep(20)
+            await manager.cleanup_stale_connections(max_idle_seconds=60.0)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"[WATCHDOG ERROR] {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize DB schemas
     await init_db()
+    watchdog = asyncio.create_task(connection_watchdog())
     yield
+    watchdog.cancel()
+    try:
+        await watchdog
+    except asyncio.CancelledError:
+        pass
 
 app = FastAPI(
     title="VaultRoom Secure Workspace API",
@@ -109,6 +126,11 @@ async def websocket_endpoint(
             except Exception:
                 pass
             return
+
+        if not room.is_active:
+            room.is_active = True
+            await db.commit()
+            logger.info(f"[WS REACTIVATE] Inactive room '{code}' reactivated by websocket connection.")
 
         member_res = await db.execute(
             select(RoomMember).where(RoomMember.room_id == room.id, RoomMember.user_id == user_id)

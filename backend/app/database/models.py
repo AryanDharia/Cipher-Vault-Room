@@ -39,6 +39,7 @@ class Room(Base):
     creator_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
     is_locked = Column(Boolean, default=False, nullable=False)
     lock_reason = Column(String(255), nullable=True)
     threshold_required = Column(Integer, default=2, nullable=False)

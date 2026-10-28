@@ -56,6 +56,7 @@ async def create_room(
             "threshold_required": room.threshold_required,
             "threshold_total": room.threshold_total,
             "created_at": room.created_at.isoformat(),
+            "is_active": room.is_active,
             "is_locked": room.is_locked
         },
         "id": room.id,
@@ -65,6 +66,7 @@ async def create_room(
         "threshold_required": room.threshold_required,
         "threshold_total": room.threshold_total,
         "created_at": room.created_at.isoformat(),
+        "is_active": room.is_active,
         "is_locked": room.is_locked,
         "current_user_role": "owner",
         "members": members,
@@ -82,6 +84,10 @@ async def join_room(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
 
+    if not room.is_active:
+        room.is_active = True
+        await db.commit()
+
     try:
         member = await RoomService.join_room(db, room, user, role=req.role or "editor")
     except PermissionError as e:
@@ -96,6 +102,7 @@ async def join_room(
             "code": room.code,
             "name": room.name,
             "creator_id": room.creator_id,
+            "is_active": room.is_active,
             "is_locked": room.is_locked,
             "lock_reason": room.lock_reason,
             "threshold_required": room.threshold_required,
@@ -118,6 +125,10 @@ async def get_room(
     db: AsyncSession = Depends(get_db)
 ):
     room, member = await get_room_and_membership(code, user, db)
+    if not room.is_active:
+        room.is_active = True
+        await db.commit()
+
     members = await RoomService.get_room_members(db, room.id)
     return {
         "room": {
@@ -125,6 +136,7 @@ async def get_room(
             "code": room.code,
             "name": room.name,
             "creator_id": room.creator_id,
+            "is_active": room.is_active,
             "is_locked": room.is_locked,
             "lock_reason": room.lock_reason,
             "threshold_required": room.threshold_required,

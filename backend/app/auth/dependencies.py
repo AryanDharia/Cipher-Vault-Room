@@ -46,10 +46,11 @@ async def get_room_and_membership(
     db: AsyncSession
 ) -> tuple[Room, RoomMember]:
     """Verify room exists and user is an authorized member."""
+    from sqlalchemy import func
     from app.rooms.service import normalize_room_code
     normalized = normalize_room_code(code)
     
-    room_result = await db.execute(select(Room).where(Room.code == normalized))
+    room_result = await db.execute(select(Room).where(func.upper(Room.code) == normalized))
     room = room_result.scalar_one_or_none()
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")

@@ -36,6 +36,8 @@ wheels/
 
 # Databases
 *.db
+*.db.backup
+*.backup
 *.sqlite
 *.sqlite3
 

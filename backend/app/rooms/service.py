@@ -52,6 +52,7 @@ class RoomService:
             created_at=now,
             expires_at=expires_at,
             is_locked=False,
+            is_active=True,
             threshold_required=threshold_required,
             threshold_total=threshold_total
         )
