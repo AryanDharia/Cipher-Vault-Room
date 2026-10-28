@@ -181,8 +181,14 @@ async def test_stale_connection_watchdog_cleanup():
     room_code = generate_random_room_code()
 
     async with AsyncSessionLocal() as db:
-        user_res = await db.execute(select(User).where(User.username == "clean_user"))
-        user = user_res.scalar_one()
+        user_res = await db.execute(select(User).where(User.username == "watch_user"))
+        user = user_res.scalar_one_or_none()
+        if not user:
+            user = User(username="watch_user", password_hash="dummy_hash")
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
         room = Room(code=room_code, name="Watchdog Room", creator_id=user.id, is_active=True)
         db.add(room)
         await db.commit()

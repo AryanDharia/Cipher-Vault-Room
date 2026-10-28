@@ -1,13 +1,22 @@
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.pool import NullPool
 from app.config import settings
 from app.database.models import Base
+
+connect_args = {}
+pool_kwargs = {}
+if "sqlite" in settings.normalized_database_url:
+    connect_args = {"timeout": 30}
+    pool_kwargs = {"poolclass": NullPool}
 
 # Create async engine
 engine = create_async_engine(
     settings.normalized_database_url,
     echo=False,
-    future=True
+    future=True,
+    connect_args=connect_args,
+    **pool_kwargs
 )
 
 # Async session factory
