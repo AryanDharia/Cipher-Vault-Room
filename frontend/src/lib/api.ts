@@ -9,19 +9,24 @@ class ApiClient {
   private token: string | null = null;
 
   constructor() {
-    this.token = sessionStorage.getItem('vaultroom_token');
+    this.token = localStorage.getItem('vaultroom_token') || sessionStorage.getItem('vaultroom_token');
   }
 
   setToken(token: string | null) {
     this.token = token;
     if (token) {
+      localStorage.setItem('vaultroom_token', token);
       sessionStorage.setItem('vaultroom_token', token);
     } else {
+      localStorage.removeItem('vaultroom_token');
       sessionStorage.removeItem('vaultroom_token');
     }
   }
 
   getToken(): string | null {
+    if (!this.token) {
+      this.token = localStorage.getItem('vaultroom_token') || sessionStorage.getItem('vaultroom_token');
+    }
     return this.token;
   }
 
@@ -42,7 +47,7 @@ class ApiClient {
       });
     } catch (err: any) {
       if (err instanceof TypeError && err.message.includes('fetch')) {
-        throw new Error('VaultRoom backend server is unreachable. Please ensure the backend is running on http://localhost:8000.');
+        throw new Error('VaultRoom backend server is unreachable. Please ensure the backend is running.');
       }
       throw new Error(`Connection failed: ${err.message || 'Unable to communicate with server'}`);
     }
@@ -55,7 +60,9 @@ class ApiClient {
       } catch {
         // fallback
       }
-      throw new Error(errorMsg);
+      const error: any = new Error(errorMsg);
+      error.status = response.status;
+      throw error;
     }
 
     return response.json();

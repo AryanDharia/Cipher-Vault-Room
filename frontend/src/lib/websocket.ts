@@ -41,8 +41,10 @@ export class VaultWebSocket {
 
     this.setState('connecting');
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Use current origin's host; if running Vite on 5173, point directly to backend port 8000
-    const host = window.location.port === '5173'
+    const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    // If in local dev and running on a Vite/dev port (e.g. 5173, 5174, etc.), connect directly to backend 8000.
+    // In production (Render single-service), connect directly to window.location.host.
+    const host = isLocalDev && window.location.port !== '8000'
       ? `${window.location.hostname}:8000`
       : window.location.host;
     const wsUrl = `${protocol}//${host}/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
@@ -82,10 +84,10 @@ export class VaultWebSocket {
   }
 
   private scheduleReconnect() {
-    if (this.reconnectAttempts > 8) return;
+    if (this.reconnectAttempts > 15) return;
     this.reconnectAttempts++;
     this.setState('reconnecting');
-    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 10000);
+    const delay = Math.min(500 * Math.pow(1.3, this.reconnectAttempts), 5000);
     setTimeout(() => {
       this.connect();
     }, delay);
@@ -97,7 +99,7 @@ export class VaultWebSocket {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: 'PING' }));
       }
-    }, 25000);
+    }, 15000);
   }
 
   private stopHeartbeat() {

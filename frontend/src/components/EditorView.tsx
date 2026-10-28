@@ -50,6 +50,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [exporting, setExporting] = useState<boolean>(false);
   const [exportResult, setExportResult] = useState<any | null>(null);
 
+  // References to prevent broadcast echo loops and debounce network updates
+  const isRemoteUpdateRef = useRef<boolean>(false);
+  const broadcastTimerRef = useRef<number | null>(null);
+  const autoSaveTimerRef = useRef<number | null>(null);
+
   // Auto-masking regex for credit cards (13-19 digits) and account numbers
   const maskSensitiveNumbers = (text: string) => {
     return text.replace(/\b(?:\d[ -]*?){13,19}\b/g, (match) => {
@@ -58,17 +63,58 @@ export const EditorView: React.FC<EditorViewProps> = ({
     });
   };
 
-  // Setup TipTap Editor
+  // Setup TipTap Editor with instant real-time collaborative broadcast
   const editor = useEditor({
     extensions: [StarterKit],
     content: plaintext,
     editable: !isLocked && currentUserRole !== 'viewer',
     onUpdate: ({ editor }) => {
-      setSaveStatus('unsaved');
+      // If the content change was injected from a remote collaborator, do NOT re-broadcast!
+      if (isRemoteUpdateRef.current) return;
+
       const html = editor.getHTML();
       setPlaintext(html);
+      setSaveStatus('unsaved');
+
+      // 1. FAST REAL-TIME BROADCAST: 120ms debounce delivers keystrokes to peers instantly
+      if (broadcastTimerRef.current) {
+        window.clearTimeout(broadcastTimerRef.current);
+      }
+      broadcastTimerRef.current = window.setTimeout(async () => {
+        if (!roomKey || !doc) return;
+        try {
+          const envelope = await encryptEnvelope(html, roomKey);
+          onBroadcastDelta(doc.id, JSON.stringify(envelope));
+        } catch {
+          // Encryption or broadcast skipped
+        }
+      }, 120);
+
+      // 2. PERSISTENT BACKGROUND AUTOSAVE: 1500ms debounce saves to database
+      if (autoSaveTimerRef.current) {
+        window.clearTimeout(autoSaveTimerRef.current);
+      }
+      autoSaveTimerRef.current = window.setTimeout(async () => {
+        if (!roomKey || !doc) return;
+        try {
+          setSaveStatus('saving');
+          const envelope = await encryptEnvelope(html, roomKey);
+          await onSaveDocument(doc.id, JSON.stringify(envelope));
+          setSaveStatus('saved');
+        } catch {
+          setSaveStatus('unsaved');
+        }
+      }, 1500);
     },
   });
+
+  // Cleanup debounce timers on unmount
+  useEffect(() => {
+    return () => {
+      if (broadcastTimerRef.current) window.clearTimeout(broadcastTimerRef.current);
+      if (autoSaveTimerRef.current) window.clearTimeout(autoSaveTimerRef.current);
+    };
+  }, []);
 
   // Decrypt document when document or roomKey changes
   useEffect(() => {
@@ -124,18 +170,24 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   // Handle remote incoming deltas
   useEffect(() => {
-    if (!remoteDeltas || remoteDeltas.length === 0 || !roomKey) return;
+    if (!remoteDeltas || remoteDeltas.length === 0 || !roomKey || !editor) return;
     const latest = remoteDeltas[remoteDeltas.length - 1];
     if (latest.document_id === doc?.id) {
       decryptEnvelope(latest.encrypted_payload, roomKey).then((incomingText) => {
-        if (incomingText && incomingText !== plaintext) {
+        const currentContent = editor.getHTML();
+        if (incomingText && incomingText !== currentContent) {
+          isRemoteUpdateRef.current = true;
+          // In TipTap, passing false as second argument suppresses the onUpdate event
+          editor.commands.setContent(incomingText, false);
           setPlaintext(incomingText);
-          editor?.commands.setContent(incomingText);
           setSaveStatus('saved');
+          setTimeout(() => {
+            isRemoteUpdateRef.current = false;
+          }, 80);
         }
       }).catch(() => {});
     }
-  }, [remoteDeltas]);
+  }, [remoteDeltas, editor, doc?.id, roomKey]);
 
   // Encrypt & Save Document
   const handleSave = async () => {

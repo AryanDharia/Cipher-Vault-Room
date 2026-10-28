@@ -9,7 +9,7 @@ import { AuthModal } from './components/AuthModal';
 import { RoomModal } from './components/RoomModal';
 import { api } from './lib/api';
 import { VaultWebSocket, ConnectionState, RoomUser } from './lib/websocket';
-import { encryptEnvelope, decryptEnvelope } from './lib/crypto';
+import { encryptEnvelope, decryptEnvelope, deriveRoomKey } from './lib/crypto';
 
 export function App() {
   // Authentication & User State
@@ -44,6 +44,27 @@ export function App() {
 
   const wsRef = useRef<VaultWebSocket | null>(null);
 
+  // Restore active room from saved session
+  const restoreActiveRoom = async () => {
+    const savedCode = localStorage.getItem('vaultroom_active_room_code');
+    if (!savedCode) return;
+
+    const savedPass = sessionStorage.getItem(`vaultroom_pass_${savedCode}`) || localStorage.getItem(`vaultroom_pass_${savedCode}`);
+    if (!savedPass) return;
+
+    try {
+      const roomData = await api.getRoom(savedCode);
+      const { key } = await deriveRoomKey(savedPass, savedCode);
+      handleRoomJoined(roomData, key, savedPass);
+    } catch (err: any) {
+      if (err.status === 404 || err.status === 403 || (err.message && (err.message.includes('404') || err.message.includes('403')))) {
+        localStorage.removeItem('vaultroom_active_room_code');
+        localStorage.removeItem(`vaultroom_pass_${savedCode}`);
+        sessionStorage.removeItem(`vaultroom_pass_${savedCode}`);
+      }
+    }
+  };
+
   // Initial Auth Check
   useEffect(() => {
     const token = api.getToken();
@@ -51,9 +72,13 @@ export function App() {
       api.getMe()
         .then((userData) => {
           setUser(userData);
+          restoreActiveRoom();
         })
-        .catch(() => {
-          api.setToken(null);
+        .catch((err: any) => {
+          if (err.status === 401 || (err.message && err.message.includes('401'))) {
+            api.setToken(null);
+            setUser(null);
+          }
         })
         .finally(() => {
           setCheckingAuth(false);
@@ -81,10 +106,12 @@ export function App() {
     // Listen to real-time broadcasts
     ws.on('ROOM_CONNECTED', (data) => {
       if (data.online_users) setOnlineUsers(data.online_users);
+      refreshMembers();
     });
 
     ws.on('USER_JOINED', (data) => {
       if (data.online_users) setOnlineUsers(data.online_users);
+      refreshMembers();
       addAuditEvent({
         id: `ev-${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -98,6 +125,7 @@ export function App() {
 
     ws.on('USER_LEFT', (data) => {
       if (data.online_users) setOnlineUsers(data.online_users);
+      refreshMembers();
       addAuditEvent({
         id: `ev-${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -107,6 +135,15 @@ export function App() {
         details: {},
         is_simulated: false,
       });
+    });
+
+    ws.on('MEMBER_ROLE_UPDATED', (data) => {
+      setMembers((prev) =>
+        prev.map((m) => (m.user_id === data.user_id ? { ...m, role: data.new_role } : m))
+      );
+      if (user && user.id === data.user_id) {
+        setCurrentUserRole(data.new_role);
+      }
     });
 
     ws.on('ROOM_LOCK_STATE_CHANGED', (data) => {
@@ -136,13 +173,17 @@ export function App() {
       });
     });
 
-    ws.on('DOCUMENT_DELETED', (data) => {
+    ws.on('DOCUMENT_DELETED', () => {
       refreshDocuments();
     });
 
-    ws.on('YJS_UPDATE', (data) => {
+    const handleIncomingDelta = (data: any) => {
       setRemoteDeltas((prev) => [...prev, data]);
-    });
+    };
+
+    ws.on('YJS_UPDATE', handleIncomingDelta);
+    ws.on('ENCRYPTED_DELTA', handleIncomingDelta);
+    ws.on('DOC_SYNC_STEP', handleIncomingDelta);
 
     ws.on('THRESHOLD_APPROVAL_REQUESTED', () => {
       refreshApprovals();
@@ -178,6 +219,7 @@ export function App() {
     ws.connect();
 
     // Fetch initial room resources
+    refreshMembers();
     refreshDocuments();
     refreshSources();
     refreshSecrets();
@@ -193,13 +235,27 @@ export function App() {
     setAuditEvents((prev) => [event, ...prev.slice(0, 100)]);
   };
 
+  const refreshMembers = async () => {
+    if (!roomCode) return;
+    try {
+      const roomData = await api.getRoom(roomCode);
+      if (roomData.members) setMembers(roomData.members);
+      if (roomData.online_users) setOnlineUsers(roomData.online_users);
+    } catch {}
+  };
+
   const refreshDocuments = async () => {
     if (!roomCode) return;
     try {
       const docs = await api.listDocuments(roomCode);
       setDocuments(docs);
-      if (docs.length > 0 && !activeDocId) {
-        setActiveDocId(docs[0].id);
+      if (docs.length > 0) {
+        const savedDoc = localStorage.getItem(`vaultroom_doc_${roomCode}`);
+        if (savedDoc && docs.some((d: any) => d.id === savedDoc)) {
+          setActiveDocId(savedDoc);
+        } else if (!activeDocId) {
+          setActiveDocId(docs[0].id);
+        }
       }
     } catch {}
   };
@@ -236,16 +292,27 @@ export function App() {
     } catch {}
   };
 
-  const handleRoomJoined = (roomData: any, key: CryptoKey) => {
-    setRoomCode(roomData.room.code);
-    setRoomName(roomData.room.name);
-    setIsLocked(roomData.room.is_locked);
-    setLockReason(roomData.room.lock_reason);
-    setThresholdRequired(roomData.room.threshold_required || 2);
-    setThresholdTotal(roomData.room.threshold_total || 3);
+  const handleRoomJoined = (roomData: any, key: CryptoKey, passphrase?: string) => {
+    const r = roomData.room || roomData;
+    const code = r.code;
+    setRoomCode(code);
+    setRoomName(r.name);
+    setIsLocked(!!r.is_locked);
+    setLockReason(r.lock_reason || null);
+    setThresholdRequired(r.threshold_required || 2);
+    setThresholdTotal(r.threshold_total || 3);
     setCurrentUserRole(roomData.current_user_role || roomData.membership?.role || 'editor');
     setRoomKey(key);
     if (roomData.members) setMembers(roomData.members);
+    if (roomData.online_users) setOnlineUsers(roomData.online_users);
+
+    if (code) {
+      localStorage.setItem('vaultroom_active_room_code', code);
+      if (passphrase) {
+        sessionStorage.setItem(`vaultroom_pass_${code}`, passphrase);
+        localStorage.setItem(`vaultroom_pass_${code}`, passphrase);
+      }
+    }
   };
 
   // Actions
@@ -441,13 +508,32 @@ export function App() {
         connectionState={connectionState}
         user={user}
         onLeaveRoom={() => {
+          if (roomCode) {
+            localStorage.removeItem('vaultroom_active_room_code');
+            localStorage.removeItem(`vaultroom_pass_${roomCode}`);
+            sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+            localStorage.removeItem(`vaultroom_doc_${roomCode}`);
+          }
           setRoomCode(null);
           setRoomKey(null);
+          setDocuments([]);
+          setMembers([]);
+          setOnlineUsers([]);
         }}
         onLogout={() => {
+          if (roomCode) {
+            localStorage.removeItem('vaultroom_active_room_code');
+            localStorage.removeItem(`vaultroom_pass_${roomCode}`);
+            sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+            localStorage.removeItem(`vaultroom_doc_${roomCode}`);
+          }
           api.setToken(null);
           setUser(null);
           setRoomCode(null);
+          setRoomKey(null);
+          setDocuments([]);
+          setMembers([]);
+          setOnlineUsers([]);
         }}
         onOpenHeist={() => setShowHeistModal(true)}
         onToggleLock={handleToggleLock}
@@ -464,7 +550,10 @@ export function App() {
               roomCode={roomCode}
               documents={documents}
               activeDocId={activeDocId}
-              onSelectDoc={(id) => setActiveDocId(id)}
+              onSelectDoc={(id) => {
+                setActiveDocId(id);
+                if (roomCode) localStorage.setItem(`vaultroom_doc_${roomCode}`, id);
+              }}
               onCreateDoc={handleCreateDocument}
               onDeleteDoc={handleDeleteDocument}
               sources={sources}

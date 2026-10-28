@@ -72,6 +72,38 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
   const isOnline = (userId: string) => onlineUsers.some((u) => u.user_id === userId);
 
+  // Merge database members and real-time online users so that any connected participant is always visible
+  const participantMap = new Map<string, { id: string; user_id: string; username: string; role: string; is_online: boolean }>();
+
+  (members || []).forEach((m) => {
+    participantMap.set(m.user_id, {
+      id: m.id || m.user_id,
+      user_id: m.user_id,
+      username: m.username,
+      role: m.role || 'editor',
+      is_online: isOnline(m.user_id),
+    });
+  });
+
+  (onlineUsers || []).forEach((u) => {
+    if (participantMap.has(u.user_id)) {
+      const existing = participantMap.get(u.user_id)!;
+      existing.is_online = true;
+      if (u.role) existing.role = u.role;
+      if (u.username) existing.username = u.username;
+    } else {
+      participantMap.set(u.user_id, {
+        id: u.user_id,
+        user_id: u.user_id,
+        username: u.username || 'Collaborator',
+        role: u.role || 'editor',
+        is_online: true,
+      });
+    }
+  });
+
+  const participantList = Array.from(participantMap.values());
+
   return (
     <aside className="w-80 border-l border-[#212638] bg-[#0d0f17] flex flex-col h-[calc(100vh-3.5rem)] select-none">
       {/* Tab Navigation */}
@@ -229,7 +261,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         <div className="flex-1 flex flex-col p-3 overflow-y-auto space-y-3">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
-              Room Participants ({members.length})
+              Room Participants ({participantList.length})
             </span>
             <span className="text-[10px] font-mono text-emerald-400">
               {onlineUsers.length} Online Now
@@ -237,44 +269,50 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            {members.map((m) => {
-              const online = isOnline(m.user_id);
-              return (
-                <div
-                  key={m.id}
-                  className="p-2.5 rounded bg-[#121522] border border-[#1f2438] flex items-center justify-between"
-                >
-                  <div className="flex items-center space-x-2.5 truncate">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        online ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-slate-600'
-                      }`}
-                      title={online ? 'Online now' : 'Offline'}
-                    />
-                    <div className="truncate">
-                      <div className="text-xs font-medium text-slate-200 truncate">{m.username}</div>
-                      <div className="text-[10px] font-mono text-slate-500 uppercase">{m.role}</div>
+            {participantList.length === 0 ? (
+              <div className="text-center py-6 text-xs text-slate-500 border border-dashed border-[#1f2438] rounded">
+                No participants connected.
+              </div>
+            ) : (
+              participantList.map((m) => {
+                const online = m.is_online;
+                return (
+                  <div
+                    key={m.user_id}
+                    className="p-2.5 rounded bg-[#121522] border border-[#1f2438] flex items-center justify-between"
+                  >
+                    <div className="flex items-center space-x-2.5 truncate">
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          online ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-slate-600'
+                        }`}
+                        title={online ? 'Online now' : 'Offline'}
+                      />
+                      <div className="truncate">
+                        <div className="text-xs font-medium text-slate-200 truncate">{m.username}</div>
+                        <div className="text-[10px] font-mono text-slate-500 uppercase">{m.role}</div>
+                      </div>
                     </div>
-                  </div>
 
-                  {currentUserRole === 'owner' && m.role !== 'owner' ? (
-                    <select
-                      value={m.role}
-                      onChange={(e) => onUpdateRole(m.user_id, e.target.value)}
-                      className="bg-[#0a0c13] border border-[#212638] rounded px-1.5 py-0.5 text-[10px] font-mono text-slate-300 focus:outline-none"
-                    >
-                      <option value="key_holder">Key Holder</option>
-                      <option value="editor">Editor</option>
-                      <option value="viewer">Viewer</option>
-                    </select>
-                  ) : (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#181d2e] text-slate-400 border border-[#212638]">
-                      {m.role}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+                    {currentUserRole === 'owner' && m.role !== 'owner' ? (
+                      <select
+                        value={m.role}
+                        onChange={(e) => onUpdateRole(m.user_id, e.target.value)}
+                        className="bg-[#0a0c13] border border-[#212638] rounded px-1.5 py-0.5 text-[10px] font-mono text-slate-300 focus:outline-none"
+                      >
+                        <option value="key_holder">Key Holder</option>
+                        <option value="editor">Editor</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                    ) : (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#181d2e] text-slate-400 border border-[#212638]">
+                        {m.role}
+                      </span>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}

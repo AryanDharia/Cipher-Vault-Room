@@ -46,7 +46,18 @@ async def create_room(
         threshold_required=req.threshold_required,
         threshold_total=req.threshold_total
     )
+    members = await RoomService.get_room_members(db, room.id)
     return {
+        "room": {
+            "id": room.id,
+            "code": room.code,
+            "name": room.name,
+            "creator_id": room.creator_id,
+            "threshold_required": room.threshold_required,
+            "threshold_total": room.threshold_total,
+            "created_at": room.created_at.isoformat(),
+            "is_locked": room.is_locked
+        },
         "id": room.id,
         "code": room.code,
         "name": room.name,
@@ -54,7 +65,10 @@ async def create_room(
         "threshold_required": room.threshold_required,
         "threshold_total": room.threshold_total,
         "created_at": room.created_at.isoformat(),
-        "is_locked": room.is_locked
+        "is_locked": room.is_locked,
+        "current_user_role": "owner",
+        "members": members,
+        "online_users": manager.get_online_users(room.code)
     }
 
 @router.post("/join")

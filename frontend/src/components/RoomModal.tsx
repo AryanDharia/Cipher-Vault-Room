@@ -5,7 +5,7 @@ import { deriveRoomKey } from '../lib/crypto';
 
 interface RoomModalProps {
   isOpen: boolean;
-  onRoomJoined: (roomData: any, roomKey: CryptoKey) => void;
+  onRoomJoined: (roomData: any, roomKey: CryptoKey, passphrase?: string) => void;
 }
 
 export const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onRoomJoined }) => {
@@ -31,23 +31,25 @@ export const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onRoomJoined }) =>
       }
 
       if (mode === 'create') {
-        const room = await api.createRoom({
+        const res = await api.createRoom({
           name: roomName.trim() || 'Confidential Financial Vault',
           threshold_required: thresholdReq,
           threshold_total: thresholdTot,
         });
 
+        const activeCode = res.code || res.room?.code;
         // Derive client-side zero-knowledge AES-256-GCM key
-        const { key } = await deriveRoomKey(passphrase.trim(), room.code);
+        const { key } = await deriveRoomKey(passphrase.trim(), activeCode);
 
         onRoomJoined(
           {
-            room,
-            current_user_role: 'owner',
-            members: [],
-            online_users: [],
+            room: res.room || res,
+            current_user_role: res.current_user_role || 'owner',
+            members: res.members || [],
+            online_users: res.online_users || [],
           },
-          key
+          key,
+          passphrase.trim()
         );
       } else {
         const cleanCode = roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -58,7 +60,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onRoomJoined }) =>
         const res = await api.joinRoom({ code: cleanCode, role: 'editor' });
         const { key } = await deriveRoomKey(passphrase.trim(), cleanCode);
 
-        onRoomJoined(res, key);
+        onRoomJoined(res, key, passphrase.trim());
       }
     } catch (err: any) {
       setError(err.message || 'Failed to process room action');
