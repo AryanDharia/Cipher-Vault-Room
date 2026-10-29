@@ -710,7 +710,7 @@ export function App() {
   };
 
   if (!user) {
-    return <AuthModal onSuccess={(u) => setUser(u)} />;
+    return <AuthModal onSuccess={(u) => setUser(u)} notification={bannerNotification} />;
   }
 
   return (
@@ -834,7 +834,13 @@ export function App() {
         </div>
       ) : (
         /* Room Join / Lobby Screen */
-        <RoomModal isOpen={true} onRoomJoined={handleRoomJoined} />
+        <RoomModal
+          isOpen={true}
+          user={user}
+          onRoomJoined={handleRoomJoined}
+          onLogout={() => setShowSignOutModal(true)}
+          onOpenDeleteAccount={() => setShowDeleteAccountModal(true)}
+        />
       )}
 
       {/* Heist Mode 30-Second Security Simulation Modal */}

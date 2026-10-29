@@ -4,9 +4,10 @@ import { api } from '../lib/api';
 
 interface AuthModalProps {
   onSuccess: (user: any) => void;
+  notification?: string | null;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, notification }) => {
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -45,6 +46,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             <p className="text-xs text-slate-400">Secure Collaborative Editor & Document Workspace</p>
           </div>
         </div>
+
+        {notification && (
+          <div className="mb-4 p-2.5 rounded bg-emerald-950/40 border border-emerald-800/60 text-xs text-emerald-300 font-mono flex items-center space-x-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            <span>{notification}</span>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-2.5 rounded bg-red-950/40 border border-red-800/60 text-xs text-red-300 font-mono">

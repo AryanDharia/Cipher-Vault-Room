@@ -17,7 +17,7 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-[#08090e]/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
+    <div className="fixed inset-0 bg-[#08090e]/80 backdrop-blur-sm flex items-center justify-center z-[70] p-4 select-none animate-fadeIn">
       <div className="bg-[#0f111a] border border-[#212638] rounded-xl max-w-md w-full p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
@@ -98,7 +98,7 @@ export const DeleteRoomModal: React.FC<DeleteRoomModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
+    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-[70] p-4 select-none animate-fadeIn">
       <div className="bg-[#0f111a] border border-red-900/50 rounded-xl max-w-md w-full p-6 shadow-2xl shadow-red-950/20">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
@@ -202,7 +202,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
+    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-[70] p-4 select-none animate-fadeIn">
       <div className="bg-[#0f111a] border border-red-900/60 rounded-xl max-w-md w-full p-6 shadow-2xl shadow-red-950/30">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
@@ -323,7 +323,7 @@ export const KickMemberModal: React.FC<KickMemberModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
+    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-[70] p-4 select-none animate-fadeIn">
       <div className="bg-[#0f111a] border border-amber-800/60 rounded-xl max-w-md w-full p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
@@ -434,7 +434,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
+    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-[70] p-4 select-none animate-fadeIn">
       <div className="bg-[#0f111a] border border-[#212638] rounded-xl max-w-md w-full p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-mono font-bold text-slate-100 flex items-center space-x-2">

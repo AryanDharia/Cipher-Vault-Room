@@ -1,14 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { Shield, PlusCircle, LogIn, Users, ArrowRight, ChevronDown, ChevronUp, Lock, Info, Check } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Shield, PlusCircle, LogIn, Users, ArrowRight, ChevronDown, ChevronUp, Lock, Info, Check, User, LogOut, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { deriveRoomKey } from '../lib/crypto';
 
 interface RoomModalProps {
   isOpen: boolean;
+  user?: { id: string; username: string; role: string } | null;
   onRoomJoined: (roomData: any, roomKey: CryptoKey, passphrase?: string) => void;
+  onLogout?: () => void;
+  onOpenDeleteAccount?: () => void;
 }
 
-export const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onRoomJoined }) => {
+export const RoomModal: React.FC<RoomModalProps> = ({
+  isOpen,
+  user,
+  onRoomJoined,
+  onLogout,
+  onOpenDeleteAccount,
+}) => {
   const [mode, setMode] = useState<'create' | 'join'>('create');
   const [roomName, setRoomName] = useState('');
   const [roomCode, setRoomCode] = useState('');
@@ -26,6 +35,19 @@ export const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onRoomJoined }) =>
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close user menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Synchronize simplified "Number of Hosts" with underlying threshold quorum unless user customized advanced settings
   useEffect(() => {
@@ -109,6 +131,102 @@ export const RoomModal: React.FC<RoomModalProps> = ({ isOpen, onRoomJoined }) =>
 
   return (
     <div className="fixed inset-0 bg-[#08090e]/95 backdrop-blur-md flex items-center justify-center z-50 p-4 select-none">
+      {/* Top Left: Logo / Branding */}
+      <div className="absolute top-4 left-4 md:top-6 md:left-8 flex items-center space-x-2.5">
+        <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.25)]">
+          <Shield className="w-4 h-4" />
+        </div>
+        <div className="flex flex-col">
+          <span className="font-mono text-sm font-bold tracking-wider text-white">
+            VAULT<span className="text-cyan-400">ROOM</span>
+          </span>
+          <span className="text-[10px] font-mono text-slate-500 tracking-tight hidden sm:block">
+            Zero-Knowledge Collaborative Workspace
+          </span>
+        </div>
+      </div>
+
+      {/* Top Right: User Profile & Details Menu */}
+      {user && (
+        <div className="absolute top-4 right-4 md:top-6 md:right-8 z-30" ref={userMenuRef}>
+          <button
+            type="button"
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            className="flex items-center space-x-2.5 px-3 py-1.5 rounded-xl bg-[#0f111a] hover:bg-[#151926] border border-[#212638] hover:border-cyan-500/40 transition-all shadow-lg"
+          >
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-950/90 to-cyan-900/40 border border-cyan-700/50 flex items-center justify-center text-cyan-400 shadow-inner">
+              <User className="w-4 h-4" />
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-xs font-semibold text-slate-100 leading-tight">{user.username}</span>
+              <span className="text-[10px] font-mono text-cyan-400 uppercase leading-none tracking-wide">
+                {user.role || 'Member'}
+              </span>
+            </div>
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                showUserMenu ? 'rotate-180 text-cyan-400' : ''
+              }`}
+            />
+          </button>
+
+          {/* User Details Dropdown */}
+          {showUserMenu && (
+            <div className="absolute right-0 mt-2 w-64 rounded-xl bg-[#0f111a] border border-[#212638] shadow-2xl py-2 z-50 animate-fadeIn divide-y divide-[#212638]/60">
+              <div className="px-3.5 py-2.5">
+                <div className="flex items-center space-x-2 mb-1">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
+                  <span className="text-xs font-bold text-slate-100">{user.username}</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                  <span>Role:</span>
+                  <span className="text-cyan-400 font-semibold uppercase">{user.role || 'Member'}</span>
+                </div>
+                {user.id && (
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mt-1">
+                    <span>Account ID:</span>
+                    <span>{user.id.slice(0, 8)}...</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="py-1">
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      onLogout();
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs font-mono text-slate-300 hover:bg-[#1a1f33] hover:text-white flex items-center space-x-2.5 transition-colors"
+                  >
+                    <LogOut className="w-4 h-4 text-amber-400" />
+                    <span>Sign Out</span>
+                  </button>
+                )}
+
+                {onOpenDeleteAccount && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      onOpenDeleteAccount();
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs font-mono text-red-400 hover:bg-red-950/50 hover:text-red-300 flex items-center space-x-2.5 transition-colors border-t border-[#212638]/40"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-400 shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="font-semibold">Delete Account</span>
+                      <span className="text-[10px] text-red-400/70">Permanently erase user data</span>
+                    </div>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="bg-[#0f111a] border border-[#212638] rounded-xl max-w-lg w-full p-6 shadow-2xl animate-fadeIn">
         {/* Modal Header Tabs */}
         <div className="flex items-center space-x-2 border-b border-[#212638] pb-3 mb-4">
