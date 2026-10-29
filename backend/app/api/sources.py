@@ -1,6 +1,8 @@
 import json
+import io
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +16,41 @@ from app.collaboration.manager import manager
 router = APIRouter(prefix="/rooms/{code}/sources", tags=["Source Library"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB maximum
-ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".json", ".csv"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".json", ".csv"}
+
+def get_mime_type(ext: str) -> str:
+    mimes = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".txt": "text/plain; charset=utf-8",
+        ".md": "text/markdown; charset=utf-8",
+        ".json": "application/json",
+        ".csv": "text/csv; charset=utf-8"
+    }
+    return mimes.get(ext, "application/octet-stream")
+
+def extract_docx_text(docx_bytes: bytes) -> str:
+    """
+    Safely extract readable text from a .docx file using standard library zipfile and XML parser.
+    Zero untrusted code execution, zero external dependencies.
+    """
+    try:
+        import zipfile
+        import xml.etree.ElementTree as ET
+        with zipfile.ZipFile(io.BytesIO(docx_bytes)) as z:
+            if "word/document.xml" not in z.namelist():
+                return "DOCX document preview: word/document.xml missing from archive."
+            xml_content = z.read("word/document.xml")
+            tree = ET.fromstring(xml_content)
+            ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+            paragraphs = []
+            for p in tree.iterfind('.//w:p', ns):
+                texts = [node.text for node in p.iterfind('.//w:t', ns) if node.text]
+                if texts:
+                    paragraphs.append("".join(texts))
+            return "\n\n".join(paragraphs) if paragraphs else "DOCX document contains no text body."
+    except Exception as e:
+        return f"DOCX document preview: parsing error: {e}"
 
 class AddUrlSourceRequest(BaseModel):
     title: str = Field(..., min_length=2, max_length=255)
@@ -193,7 +229,7 @@ async def upload_file_source(
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported file format '{ext}'. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}"
+            detail=f"Unsupported file format '{ext}'. Allowed types: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
         )
 
     content_bytes = await file.read(MAX_UPLOAD_BYTES + 1024)
@@ -203,14 +239,22 @@ async def upload_file_source(
             detail=f"File exceeds maximum allowed size of 10MB"
         )
 
-    source_type = "pdf" if ext == ".pdf" else "markdown" if ext == ".md" else "text"
-    text_content = ""
-    try:
+    if ext == ".pdf":
+        source_type = "pdf"
+        text_content = f"PDF Document: {filename} ({len(content_bytes)} bytes). Browser preview ready."
+        preview = f"PDF Document ({filename}) - {len(content_bytes) // 1024} KB. Use 'Open PDF' for readable preview."
+    elif ext == ".docx":
+        source_type = "docx"
+        text_content = extract_docx_text(content_bytes)
+        preview = (text_content[:300].strip() + ("..." if len(text_content) > 300 else "")) or f"{filename} (Word Document)"
+    elif ext == ".md":
+        source_type = "markdown"
         text_content = content_bytes.decode("utf-8", errors="ignore")
-    except Exception:
-        text_content = f"Binary file: {filename} ({len(content_bytes)} bytes)"
-
-    preview = (text_content[:300].strip() + ("..." if len(text_content) > 300 else "")) or f"{filename} uploaded successfully"
+        preview = text_content[:300].strip() + ("..." if len(text_content) > 300 else "")
+    else:
+        source_type = ext.lstrip(".") or "text"
+        text_content = content_bytes.decode("utf-8", errors="ignore")
+        preview = text_content[:300].strip() + ("..." if len(text_content) > 300 else "")
 
     source = SourceItem(
         room_id=room.id,
@@ -220,6 +264,7 @@ async def upload_file_source(
         extracted_text_encrypted=text_content,
         filename=filename,
         file_size=len(content_bytes),
+        file_data=content_bytes,
         tags_json=json.dumps(["upload", ext.lstrip(".")]),
         created_by=user.id,
         created_at=utcnow()
@@ -233,20 +278,100 @@ async def upload_file_source(
         username=user.username,
         event_type="FILE_SOURCE_UPLOADED",
         severity="info",
-        details_json=f'{{"source_id":"{source.id}","filename":"{filename}","bytes":{len(content_bytes)}}}'
+        details_json=f'{{"source_id":"{source.id}","filename":"{filename}","bytes":{len(content_bytes)},"type":"{source_type}"}}'
     )
     db.add(audit)
     await db.commit()
 
-    return {
+    source_payload = {
         "id": source.id,
         "title": source.title,
         "source_type": source.source_type,
         "filename": source.filename,
         "file_size": source.file_size,
         "content_preview": source.content_preview,
-        "created_at": source.created_at.isoformat()
+        "created_at": source.created_at.isoformat(),
+        "tags": ["upload", ext.lstrip(".")]
     }
+
+    # Broadcast source addition to room WebSocket clients
+    await manager.broadcast(room.code, {
+        "type": "SOURCE_ADDED",
+        "source": source_payload
+    })
+
+    return source_payload
+
+@router.get("/{source_id}/download")
+async def download_source_file(
+    code: str,
+    source_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Download original document or file in its native binary format.
+    """
+    room, _ = await get_room_and_membership(code, user, db)
+    result = await db.execute(
+        select(SourceItem).where(SourceItem.id == source_id, SourceItem.room_id == room.id)
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+
+    content = source.file_data
+    if not content:
+        if source.extracted_text_encrypted:
+            content = source.extracted_text_encrypted.encode("utf-8")
+        else:
+            content = b""
+
+    filename = source.filename or f"source_{source.id[:8]}.txt"
+    ext = "." + filename.split(".")[-1].lower() if "." in filename else ""
+    mime_type = get_mime_type(ext)
+
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=mime_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@router.get("/{source_id}/file")
+async def get_source_file_inline(
+    code: str,
+    source_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Stream source file inline for browser-based PDF and document viewing.
+    Avoids loading full files into browser memory unnecessarily while preserving client auth.
+    """
+    room, _ = await get_room_and_membership(code, user, db)
+    result = await db.execute(
+        select(SourceItem).where(SourceItem.id == source_id, SourceItem.room_id == room.id)
+    )
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source not found")
+
+    content = source.file_data
+    if not content:
+        if source.extracted_text_encrypted:
+            content = source.extracted_text_encrypted.encode("utf-8")
+        else:
+            content = b""
+
+    filename = source.filename or f"source_{source.id[:8]}.txt"
+    ext = "." + filename.split(".")[-1].lower() if "." in filename else ""
+    mime_type = get_mime_type(ext)
+
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=mime_type,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'}
+    )
 
 @router.delete("/{source_id}")
 async def delete_source(
@@ -256,8 +381,11 @@ async def delete_source(
     db: AsyncSession = Depends(get_db)
 ):
     room, member = await get_room_and_membership(code, user, db)
-    if member.role not in ("owner", "key_holder"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only owners or key holders can remove sources")
+    if member.role not in ("owner", "co_host", "key_holder"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only room hosts, co-hosts, or key holders can remove sources"
+        )
 
     result = await db.execute(
         select(SourceItem).where(SourceItem.id == source_id, SourceItem.room_id == room.id)
@@ -277,5 +405,11 @@ async def delete_source(
     )
     db.add(audit)
     await db.commit()
+
+    # Broadcast source deletion to all room clients
+    await manager.broadcast(room.code, {
+        "type": "SOURCE_REMOVED",
+        "source_id": source_id
+    })
 
     return {"status": "deleted", "source_id": source_id}

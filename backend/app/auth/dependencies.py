@@ -65,4 +65,14 @@ async def get_room_and_membership(
             detail="You are not a member of this room. Please join using the room code."
         )
     
+    if getattr(member, "is_kicked", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access revoked: you have been removed from this room by the host."
+        )
+
+    # Ensure room creator is always recognized as room owner
+    if user.id == room.creator_id and member.role != "owner":
+        member.role = "owner"
+    
     return room, member

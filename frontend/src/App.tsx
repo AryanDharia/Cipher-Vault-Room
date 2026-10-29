@@ -7,7 +7,8 @@ import { ActivityFeed } from './components/ActivityFeed';
 import { HeistModal } from './components/HeistModal';
 import { AuthModal } from './components/AuthModal';
 import { RoomModal } from './components/RoomModal';
-import { SignOutModal, DeleteRoomModal, DeleteAccountModal } from './components/ConfirmModal';
+import { SignOutModal, DeleteRoomModal, DeleteAccountModal, KickMemberModal, RoomSettingsModal } from './components/ConfirmModal';
+import { DocumentPreviewModal } from './components/DocumentPreviewModal';
 import { api } from './lib/api';
 import { VaultWebSocket, ConnectionState, RoomUser } from './lib/websocket';
 import { encryptEnvelope, decryptEnvelope, deriveRoomKey } from './lib/crypto';
@@ -22,6 +23,7 @@ export function App() {
   const [roomName, setRoomName] = useState<string | null>(null);
   const [isLocked, setIsLocked] = useState(false);
   const [lockReason, setLockReason] = useState<string | null>(null);
+  const [maxMembers, setMaxMembers] = useState(20);
   const [thresholdRequired, setThresholdRequired] = useState(2);
   const [thresholdTotal, setThresholdTotal] = useState(3);
   const [currentUserRole, setCurrentUserRole] = useState<string>('editor');
@@ -45,6 +47,11 @@ export function App() {
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [showDeleteRoomModal, setShowDeleteRoomModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [showKickModal, setShowKickModal] = useState(false);
+  const [memberToKick, setMemberToKick] = useState<any | null>(null);
+  const [showRoomSettingsModal, setShowRoomSettingsModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewSource, setPreviewSource] = useState<any | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [bannerNotification, setBannerNotification] = useState<string | null>(null);
   const [activeRightTab, setActiveRightTab] = useState<string>('approvals');
@@ -203,6 +210,72 @@ export function App() {
       setUser(null);
     });
 
+    ws.on('KICKED_FROM_ROOM', (data) => {
+      console.warn('[App] KICKED_FROM_ROOM received:', data);
+      if (roomCode) {
+        localStorage.removeItem('vaultroom_active_room_code');
+        localStorage.removeItem(`vaultroom_pass_${roomCode}`);
+        sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+        localStorage.removeItem(`vaultroom_doc_${roomCode}`);
+      }
+      wsRef.current?.disconnect();
+      setRoomCode(null);
+      setRoomKey(null);
+      setDocuments([]);
+      setActiveDocId(null);
+      setMembers([]);
+      setOnlineUsers([]);
+      setBannerNotification(data.message || 'You have been removed from this room by the host.');
+    });
+
+    ws.on('MEMBER_KICKED', (data) => {
+      console.info('[App] MEMBER_KICKED received:', data);
+      if (user && data.user_id === user.id) {
+        if (roomCode) {
+          localStorage.removeItem('vaultroom_active_room_code');
+          localStorage.removeItem(`vaultroom_pass_${roomCode}`);
+          sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+          localStorage.removeItem(`vaultroom_doc_${roomCode}`);
+        }
+        wsRef.current?.disconnect();
+        setRoomCode(null);
+        setRoomKey(null);
+        setDocuments([]);
+        setActiveDocId(null);
+        setMembers([]);
+        setOnlineUsers([]);
+        setBannerNotification(data.reason || 'You have been removed from this room by the host.');
+      } else {
+        refreshMembers();
+        addAuditEvent({
+          id: `ev-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          username: data.by_username || 'Host',
+          event_type: 'MEMBER_KICKED',
+          severity: 'warning',
+          details: {
+            kicked_user: data.username,
+            reason: data.reason
+          },
+          is_simulated: false,
+        });
+      }
+    });
+
+    ws.on('MEMBER_ROLE_UPDATED', (data) => {
+      console.info('[App] MEMBER_ROLE_UPDATED received:', data);
+      if (user && data.user_id === user.id) {
+        setCurrentUserRole(data.new_role);
+      }
+      refreshMembers();
+    });
+
+    ws.on('ROOM_SETTINGS_UPDATED', (data) => {
+      console.info('[App] ROOM_SETTINGS_UPDATED received:', data);
+      if (data.max_members) setMaxMembers(data.max_members);
+      if (data.name) setRoomName(data.name);
+    });
+
     ws.on('ROOM_DELETED', (data) => {
       console.warn('[App] ROOM_DELETED received:', data);
       if (roomCode) {
@@ -242,8 +315,20 @@ export function App() {
       refreshSecrets();
     });
 
-    ws.on('SOURCE_ADDED', () => {
-      refreshSources();
+    ws.on('SOURCE_ADDED', (data) => {
+      if (data && data.source) {
+        setSources((prev) => [data.source, ...prev.filter((s) => s.id !== data.source.id)]);
+      } else {
+        refreshSources();
+      }
+    });
+
+    ws.on('SOURCE_REMOVED', (data) => {
+      if (data && data.source_id) {
+        setSources((prev) => prev.filter((s) => s.id !== data.source_id));
+      } else {
+        refreshSources();
+      }
     });
 
     ws.on('SECURITY_ANOMALY_ALERT', (data) => {
@@ -344,6 +429,7 @@ export function App() {
     setRoomName(r.name);
     setIsLocked(!!r.is_locked);
     setLockReason(r.lock_reason || null);
+    setMaxMembers(r.max_members || roomData.max_members || 20);
     setThresholdRequired(r.threshold_required || 2);
     setThresholdTotal(r.threshold_total || 3);
     setCurrentUserRole(roomData.current_user_role || roomData.membership?.role || 'editor');
@@ -357,6 +443,33 @@ export function App() {
         sessionStorage.setItem(`vaultroom_pass_${code}`, passphrase);
         localStorage.setItem(`vaultroom_pass_${code}`, passphrase);
       }
+    }
+  };
+
+  const handleKickMemberConfirm = async (reason: string) => {
+    if (!roomCode || !memberToKick) return;
+    try {
+      await api.kickMember(roomCode, memberToKick.user_id, reason);
+      setMembers((prev) => prev.filter((m) => m.user_id !== memberToKick.user_id));
+      setOnlineUsers((prev) => prev.filter((u) => u.user_id !== memberToKick.user_id));
+      setShowKickModal(false);
+      setBannerNotification(`Removed ${memberToKick.username} from room.`);
+      setMemberToKick(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove member');
+    }
+  };
+
+  const handleUpdateRoomSettingsConfirm = async (settings: { name?: string; max_members?: number }) => {
+    if (!roomCode) return;
+    try {
+      const res = await api.updateRoomSettings(roomCode, settings);
+      if (res.max_members) setMaxMembers(res.max_members);
+      if (res.name) setRoomName(res.name);
+      setShowRoomSettingsModal(false);
+      setBannerNotification('Room capacity and settings updated successfully.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update settings');
     }
   };
 
@@ -669,6 +782,10 @@ export function App() {
               onAddUrlSource={handleAddUrlSource}
               onUploadSource={handleUploadSource}
               onDeleteSource={handleDeleteSource}
+              onOpenSourcePreview={(source) => {
+                setPreviewSource(source);
+                setShowPreviewModal(true);
+              }}
               secrets={secrets}
               onAddSecret={handleAddSecret}
               onRevealSecret={handleRevealSecret}
@@ -694,12 +811,19 @@ export function App() {
               roomCode={roomCode}
               thresholdRequired={thresholdRequired}
               thresholdTotal={thresholdTotal}
+              maxMembers={maxMembers}
               members={members}
               onlineUsers={onlineUsers}
               currentUserRole={currentUserRole}
+              currentUserId={user?.id}
               approvals={approvals}
               onVoteApproval={handleVoteApproval}
               onUpdateRole={handleUpdateRole}
+              onRequestKickMember={(m) => {
+                setMemberToKick(m);
+                setShowKickModal(true);
+              }}
+              onOpenSettings={() => setShowRoomSettingsModal(true)}
               onStartHeist={() => setShowHeistModal(true)}
               onEvaluateAnomaly={(metrics) => api.evaluateAnomaly(roomCode, metrics)}
             />
@@ -750,6 +874,42 @@ export function App() {
         username={user?.username || ''}
         onClose={() => setShowDeleteAccountModal(false)}
         onConfirm={handleConfirmDeleteAccount}
+      />
+
+      {/* Member Removal (Kick) Confirmation Modal */}
+      <KickMemberModal
+        isOpen={showKickModal}
+        targetUsername={memberToKick?.username || ''}
+        roomCode={roomCode || ''}
+        onClose={() => {
+          setShowKickModal(false);
+          setMemberToKick(null);
+        }}
+        onConfirm={handleKickMemberConfirm}
+      />
+
+      {/* Room Settings & Capacity Modal */}
+      {roomCode && (
+        <RoomSettingsModal
+          isOpen={showRoomSettingsModal}
+          roomCode={roomCode}
+          currentName={roomName || ''}
+          currentMaxMembers={maxMembers}
+          onClose={() => setShowRoomSettingsModal(false)}
+          onConfirm={handleUpdateRoomSettingsConfirm}
+        />
+      )}
+
+      {/* Document & Source Preview Modal (PDF, DOCX, Code, Text) */}
+      <DocumentPreviewModal
+        isOpen={showPreviewModal}
+        source={previewSource}
+        roomCode={roomCode || ''}
+        roomKey={roomKey}
+        onClose={() => {
+          setShowPreviewModal(false);
+          setPreviewSource(null);
+        }}
       />
     </div>
   );

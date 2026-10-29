@@ -68,10 +68,8 @@ async def test_host_only_room_deletion():
         db.add(guest_member)
 
         # Add a document, secret, source, and approval to verify complete cascading deletion
-        doc = Document(room_id=room_id, title="Secret Document", encrypted_envelope='{"iv":"1","ciphertext":"abc"}')
-        db.add(doc)
-        await db.flush()
-
+        doc_id = str(uuid.uuid4())
+        doc = Document(id=doc_id, room_id=room_id, title="Secret Document", encrypted_envelope='{"iv":"1","ciphertext":"abc"}')
         secret = VaultSecret(room_id=room_id, name="DB_KEY", encrypted_value="enc_val", iv="iv123", created_by=host.id)
         source = SourceItem(room_id=room_id, title="Research PDF", created_by=host.id)
         approval = ThresholdApproval(
@@ -80,10 +78,10 @@ async def test_host_only_room_deletion():
         )
         export = ExportRecord(
             export_id=f"exp_{uuid.uuid4().hex[:8]}", room_id=room_id,
-            document_id=doc.id, user_id=host.id, user_name=host.username,
+            document_id=doc_id, user_id=host.id, user_name=host.username,
             watermark_text="CONFIDENTIAL"
         )
-        db.add_all([secret, source, approval, export])
+        db.add_all([doc, secret, source, approval, export])
         await db.commit()
 
     token_host = create_access_token({"sub": host.id, "username": host.username, "role": host.role})

@@ -136,6 +136,20 @@ async def websocket_endpoint(
             select(RoomMember).where(RoomMember.room_id == room.id, RoomMember.user_id == user_id)
         )
         member = member_res.scalar_one_or_none()
+
+        # Reject kicked members immediately to prevent stale session or WS reconnection
+        if member and getattr(member, "is_kicked", False):
+            logger.warning(f"[WS KICKED REJECT] Kicked user '{username}' ({user_id}) attempted to connect to room '{code}'")
+            try:
+                await websocket.send_json({
+                    "type": "ERROR",
+                    "message": "You have been removed from this room by the host and cannot rejoin."
+                })
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Removed from room")
+            except Exception:
+                pass
+            return
+
         if not member:
             if room.is_locked:
                 logger.warning(f"[WS ROOM LOCKED] Room '{code}' is locked. User {username} cannot join.")
@@ -146,18 +160,41 @@ async def websocket_endpoint(
                     pass
                 return
 
+            # Check room capacity before allowing new WebSocket participant
+            effective_max = room.max_members if (room.max_members and room.max_members > 0) else settings.ROOM_MAX_PARTICIPANTS
+            cnt_res = await db.execute(
+                select(func.count(RoomMember.id)).where(RoomMember.room_id == room.id, RoomMember.is_kicked == False)
+            )
+            current_count = cnt_res.scalar() or 0
+            if current_count >= effective_max:
+                logger.warning(f"[WS ROOM FULL] Room '{code}' at capacity ({current_count}/{effective_max}). User '{username}' rejected.")
+                try:
+                    await websocket.send_json({
+                        "type": "ERROR",
+                        "message": f"Room has reached maximum capacity of {effective_max} members"
+                    })
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Room full")
+                except Exception:
+                    pass
+                return
+
             # Ensure valid room participant is recorded
+            actual_role = "owner" if user_id == room.creator_id else "editor"
             member = RoomMember(
                 room_id=room.id,
                 user_id=user_id,
-                role="editor",
+                role=actual_role,
+                is_kicked=False,
                 joined_at=utcnow(),
                 last_seen_at=utcnow()
             )
             db.add(member)
             await db.commit()
             await db.refresh(member)
-            logger.info(f"[WS AUTO-JOIN] User '{username}' ({user_id}) joined room '{code}' as editor")
+            logger.info(f"[WS AUTO-JOIN] User '{username}' ({user_id}) joined room '{code}' as {actual_role}")
+        elif user_id == room.creator_id and member.role != "owner":
+            member.role = "owner"
+            await db.commit()
 
         role = member.role
 

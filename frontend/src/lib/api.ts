@@ -99,7 +99,13 @@ class ApiClient {
   }
 
   // Rooms
-  async createRoom(data: { name: string; threshold_required: number; threshold_total: number }) {
+  async createRoom(data: {
+    name: string;
+    num_hosts?: number;
+    max_members?: number;
+    threshold_required?: number;
+    threshold_total?: number;
+  }) {
     return this.request<any>('/rooms', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -135,6 +141,26 @@ class ApiClient {
       method: 'PATCH',
       body: JSON.stringify({ role }),
     });
+  }
+
+  async kickMember(code: string, userId: string, reason?: string) {
+    return this.request<{ status: string; kicked_user_id: string; message: string }>(
+      `/rooms/${code}/members/${userId}/kick`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }
+    );
+  }
+
+  async updateRoomSettings(code: string, settings: { max_members?: number; name?: string }) {
+    return this.request<{ status: string; name: string; max_members: number }>(
+      `/rooms/${code}/settings`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(settings),
+      }
+    );
   }
 
   // Documents
@@ -247,6 +273,35 @@ class ApiClient {
     return this.request<any>(`/rooms/${code}/sources/${sourceId}`, {
       method: 'DELETE',
     });
+  }
+
+  getSourceFileUrl(code: string, sourceId: string, download = false) {
+    return `${API_BASE}/rooms/${code}/sources/${sourceId}/${download ? 'download' : 'file'}`;
+  }
+
+  async getSourceFileBlob(code: string, sourceId: string, download = false): Promise<Blob> {
+    const url = this.getSourceFileUrl(code, sourceId, download);
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+      throw new Error(`Failed to load source file (HTTP ${res.status})`);
+    }
+    return res.blob();
+  }
+
+  async downloadSourceFile(code: string, sourceId: string, filename: string): Promise<void> {
+    const blob = await this.getSourceFileBlob(code, sourceId, true);
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename || `source_${sourceId.slice(0, 8)}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
   }
 
   // Security & Audit

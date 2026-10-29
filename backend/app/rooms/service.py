@@ -28,7 +28,8 @@ class RoomService:
         creator: User,
         name: str,
         threshold_required: int = 2,
-        threshold_total: int = 3
+        threshold_total: int = 3,
+        max_members: int = 20
     ) -> Room:
         # Generate unique room code with retries
         code = None
@@ -53,6 +54,7 @@ class RoomService:
             expires_at=expires_at,
             is_locked=False,
             is_active=True,
+            max_members=max_members,
             threshold_required=threshold_required,
             threshold_total=threshold_total
         )
@@ -115,17 +117,23 @@ class RoomService:
         )
         member = result.scalar_one_or_none()
 
+        if member and getattr(member, "is_kicked", False):
+            raise PermissionError("You have been removed from this room by the host and cannot rejoin without authorization.")
+
         now = utcnow()
         if member:
             member.last_seen_at = now
+            if user.id == room.creator_id and member.role != "owner":
+                member.role = "owner"
         else:
-            # Check room capacity
+            # Check room capacity (exclude kicked members)
+            effective_max = room.max_members if (room.max_members and room.max_members > 0) else settings.ROOM_MAX_PARTICIPANTS
             members_result = await db.execute(
-                select(RoomMember).where(RoomMember.room_id == room.id)
+                select(RoomMember).where(RoomMember.room_id == room.id, RoomMember.is_kicked == False)
             )
             count = len(members_result.scalars().all())
-            if count >= settings.ROOM_MAX_PARTICIPANTS:
-                raise ValueError("Room has reached maximum capacity")
+            if count >= effective_max:
+                raise ValueError(f"Room has reached maximum capacity of {effective_max} members")
 
             # Default roles: if creator joins, owner; else role passed (editor/viewer/key_holder)
             actual_role = "owner" if user.id == room.creator_id else role
@@ -133,6 +141,7 @@ class RoomService:
                 room_id=room.id,
                 user_id=user.id,
                 role=actual_role,
+                is_kicked=False,
                 joined_at=now,
                 last_seen_at=now
             )
@@ -155,18 +164,25 @@ class RoomService:
 
     @staticmethod
     async def get_room_members(db: AsyncSession, room_id: str) -> List[Dict]:
+        room_res = await db.execute(select(Room).where(Room.id == room_id))
+        room = room_res.scalar_one_or_none()
+        creator_id = room.creator_id if room else None
+
         result = await db.execute(
             select(RoomMember, User)
             .join(User, RoomMember.user_id == User.id)
-            .where(RoomMember.room_id == room_id)
+            .where(RoomMember.room_id == room_id, RoomMember.is_kicked == False)
         )
         members_data = []
         for member, user in result.all():
+            is_host = (user.id == creator_id) or (member.role == "owner")
             members_data.append({
                 "id": member.id,
                 "user_id": user.id,
                 "username": user.username,
                 "role": member.role,
+                "is_host": is_host,
+                "is_co_host": (member.role == "co_host"),
                 "joined_at": member.joined_at.isoformat(),
                 "last_seen_at": member.last_seen_at.isoformat()
             })

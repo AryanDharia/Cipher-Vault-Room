@@ -354,4 +354,61 @@ class RoomConnectionManager:
                             pass
                     await self.disconnect(code, socket_id)
 
+    async def kick_user_from_room(
+        self,
+        room_code: str,
+        user_id: str,
+        reason: str = "Removed from room by host",
+        by_username: Optional[str] = None
+    ):
+        """
+        Immediately remove a user from an active room session:
+        Notifies target user, closes their WebSocket(s) with policy violation (1008),
+        purges their presence and cursor relay, and notifies remaining room peers.
+        """
+        code = normalize_room_code(room_code)
+        room_conns = self.active_rooms.get(code, {})
+        target_username = "Member"
+        kicked_sockets = []
+
+        for socket_id, client in list(room_conns.items()):
+            if client.get("user_id") == user_id:
+                target_username = client.get("username", target_username)
+                kicked_sockets.append((socket_id, client))
+
+        logger.info(f"[WS KICK] Removing user '{target_username}' ({user_id}) from room '{code}'. Sockets: {len(kicked_sockets)}")
+
+        # 1. Notify and terminate target sockets
+        for socket_id, client in kicked_sockets:
+            ws: WebSocket = client.get("ws")
+            if ws:
+                try:
+                    await ws.send_json({
+                        "type": "KICKED_FROM_ROOM",
+                        "room_code": code,
+                        "message": reason
+                    })
+                except Exception as e:
+                    logger.debug(f"[WS KICK NOTIFY ERR] Socket {socket_id}: {e}")
+                try:
+                    await ws.close(code=1008, reason=reason)
+                except Exception as e:
+                    logger.debug(f"[WS KICK CLOSE ERR] Socket {socket_id}: {e}")
+            await self.disconnect(code, socket_id)
+
+        # 2. Purge user presence from in-memory room state
+        if code in self.room_presence:
+            self.room_presence[code].pop(user_id, None)
+
+        # 3. Broadcast real-time removal event to remaining collaborators
+        await self.broadcast(code, {
+            "type": "MEMBER_KICKED",
+            "room_code": code,
+            "user_id": user_id,
+            "username": target_username,
+            "by_username": by_username,
+            "reason": reason,
+            "online_users": self.get_online_users(code)
+        })
+
 manager = RoomConnectionManager()

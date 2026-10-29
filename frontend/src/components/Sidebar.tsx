@@ -14,7 +14,11 @@ import {
   Check,
   Search,
   Upload,
-  AlertCircle
+  AlertCircle,
+  Download,
+  FileSpreadsheet,
+  FileCode,
+  ExternalLink
 } from 'lucide-react';
 import { api } from '../lib/api';
 
@@ -30,6 +34,7 @@ interface SidebarProps {
   onAddUrlSource: (title: string, url: string) => void;
   onUploadSource: (file: File) => void;
   onDeleteSource: (sourceId: string) => void;
+  onOpenSourcePreview?: (source: any) => void;
   secrets: any[];
   onAddSecret: (name: string, category: string, value: string, desc?: string) => void;
   onRevealSecret: (secretId: string) => Promise<string | null>;
@@ -48,6 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onAddUrlSource,
   onUploadSource,
   onDeleteSource,
+  onOpenSourcePreview,
   secrets,
   onAddSecret,
   onRevealSecret,
@@ -256,41 +262,146 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-1.5">
+          <div className="flex-1 overflow-y-auto space-y-2">
             {sources
               .filter((s) => s.title.toLowerCase().includes(sourceSearch.toLowerCase()))
-              .map((source) => (
-                <div
-                  key={source.id}
-                  onClick={() => setSelectedSourcePreview(source)}
-                  className="group p-2 rounded bg-[#121522] border border-[#1f2438] hover:border-cyan-500/30 cursor-pointer transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-1.5 truncate">
-                      {source.source_type === 'url' ? (
-                        <Globe className="w-3 h-3 text-cyan-400 shrink-0" />
-                      ) : source.source_type === 'pdf' ? (
-                        <BookOpen className="w-3 h-3 text-amber-400 shrink-0" />
-                      ) : (
-                        <FileText className="w-3 h-3 text-slate-400 shrink-0" />
-                      )}
-                      <span className="text-xs font-medium text-slate-200 truncate">{source.title}</span>
+              .map((source) => {
+                const sType = (source.source_type || '').toLowerCase();
+                const sFile = source.filename || source.title || '';
+                const isPdf = sType === 'pdf' || sFile.endsWith('.pdf');
+                const isDocx = sType === 'docx' || sFile.endsWith('.docx');
+                const isUrl = sType === 'url';
+                const sizeStr = source.file_size
+                  ? source.file_size < 1024 * 1024
+                    ? `${(source.file_size / 1024).toFixed(0)} KB`
+                    : `${(source.file_size / (1024 * 1024)).toFixed(1)} MB`
+                  : null;
+
+                return (
+                  <div
+                    key={source.id}
+                    onClick={() => {
+                      if (onOpenSourcePreview) {
+                        onOpenSourcePreview(source);
+                      } else {
+                        setSelectedSourcePreview(source);
+                      }
+                    }}
+                    className="group p-2.5 rounded-lg bg-[#121522] border border-[#1f2438] hover:border-cyan-500/40 cursor-pointer transition-all"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center space-x-2 truncate">
+                        {isUrl ? (
+                          <Globe className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        ) : isPdf ? (
+                          <BookOpen className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        ) : isDocx ? (
+                          <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        ) : (
+                          <FileCode className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        )}
+                        <span className="text-xs font-medium text-slate-200 truncate">{source.title}</span>
+                      </div>
+                      <div className="flex items-center space-x-1 shrink-0 ml-1">
+                        {!isUrl && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              api.downloadSourceFile(roomCode, source.id, source.filename || source.title);
+                            }}
+                            className="p-1 text-slate-400 hover:text-cyan-300 opacity-80 group-hover:opacity-100 transition-opacity"
+                            title="Download original file"
+                          >
+                            <Download className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteSource(source.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-slate-500 transition-opacity"
+                          title="Delete source"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteSource(source.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-400 transition-opacity"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
+
+                    <div className="flex items-center space-x-1.5 mt-1.5">
+                      <span className="text-[9px] font-mono uppercase px-1.5 py-0.2 rounded bg-[#181d2e] text-cyan-400 border border-cyan-800/30">
+                        {sType}
+                      </span>
+                      {sizeStr && (
+                        <span className="text-[10px] font-mono text-slate-500">
+                          {sizeStr}
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-tight">
+                      {source.content_preview || 'No preview available'}
+                    </p>
+
+                    {/* Accessible Action Buttons */}
+                    <div className="mt-2 pt-2 border-t border-[#1b2033] flex items-center justify-between">
+                      {isPdf ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenSourcePreview?.(source);
+                          }}
+                          className="px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800/60 text-amber-300 text-[10px] font-mono hover:bg-amber-900/60 flex items-center space-x-1 transition-colors"
+                        >
+                          <BookOpen className="w-2.5 h-2.5" />
+                          <span>Open PDF</span>
+                        </button>
+                      ) : isDocx ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenSourcePreview?.(source);
+                          }}
+                          className="px-2 py-0.5 rounded bg-blue-950/60 border border-blue-800/60 text-blue-300 text-[10px] font-mono hover:bg-blue-900/60 flex items-center space-x-1 transition-colors"
+                        >
+                          <FileText className="w-2.5 h-2.5" />
+                          <span>Preview Word</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenSourcePreview?.(source);
+                          }}
+                          className="px-2 py-0.5 rounded bg-[#161a29] border border-[#262c42] text-slate-300 hover:text-white text-[10px] font-mono hover:bg-[#1f243b] flex items-center space-x-1 transition-colors"
+                        >
+                          <Eye className="w-2.5 h-2.5" />
+                          <span>Preview</span>
+                        </button>
+                      )}
+
+                      {!isUrl && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            api.downloadSourceFile(roomCode, source.id, source.filename || source.title);
+                          }}
+                          className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center space-x-1"
+                        >
+                          <Download className="w-2.5 h-2.5" />
+                          <span>Download</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-tight">
-                    {source.content_preview || 'No preview available'}
-                  </p>
-                </div>
-              ))}
+                );
+              })}
           </div>
         </div>
       )}
@@ -494,7 +605,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="space-y-3">
                 <input
                   type="file"
-                  accept=".pdf,.txt,.md,.json,.csv"
+                  accept=".pdf,.docx,.txt,.md,.json,.csv"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
@@ -504,7 +615,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className="w-full text-xs text-slate-300 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-slate-900 hover:file:bg-cyan-500"
                 />
-                <p className="text-[10px] text-slate-500">Supports PDF, TXT, MD, JSON up to 10MB.</p>
+                <p className="text-[10px] text-slate-500">Supports PDF, Word (.docx), TXT, Markdown, JSON, CSV up to 10MB.</p>
                 <div className="flex justify-end">
                   <button
                     type="button"

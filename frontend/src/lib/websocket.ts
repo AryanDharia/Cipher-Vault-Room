@@ -88,7 +88,7 @@ export class VaultWebSocket {
           if (msg.type !== 'PONG') {
             console.log(`[VaultWebSocket] Received event: ${msg.type}`);
           }
-          if (msg.type === 'ROOM_DELETED') {
+          if (msg.type === 'ROOM_DELETED' || msg.type === 'KICKED_FROM_ROOM') {
             this.isExplicitlyClosed = true;
             this.stopHeartbeat();
           }

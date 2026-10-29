@@ -286,3 +286,226 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
     </div>
   );
 };
+
+interface KickMemberModalProps {
+  isOpen: boolean;
+  targetUsername: string;
+  roomCode: string;
+  onClose: () => void;
+  onConfirm: (reason: string) => Promise<void>;
+}
+
+export const KickMemberModal: React.FC<KickMemberModalProps> = ({
+  isOpen,
+  targetUsername,
+  roomCode,
+  onClose,
+  onConfirm,
+}) => {
+  const [reason, setReason] = useState('Administrative removal by host');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      await onConfirm(reason.trim() || 'Removed by room host');
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to remove member');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
+      <div className="bg-[#0f111a] border border-amber-800/60 rounded-xl max-w-md w-full p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-950/60 border border-amber-700/80 flex items-center justify-center text-amber-400">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <h2 className="text-base font-mono font-bold text-slate-100">Remove Member</h2>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-[#1a1f33] transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <p className="text-sm text-slate-300 mb-3">
+          Are you sure you want to remove <span className="font-bold text-amber-300">{targetUsername}</span> from room <span className="font-mono text-cyan-400 font-bold">{roomCode}</span>?
+        </p>
+
+        <div className="p-3 rounded-lg bg-amber-950/30 border border-amber-800/40 text-amber-200/90 text-xs font-mono mb-4 space-y-1">
+          <p>• The user will be immediately disconnected and notified.</p>
+          <p>• Active presence, cursors, and room access will be revoked.</p>
+          <p>• They cannot rejoin using a stale session or existing WebSocket connection.</p>
+          <p className="text-slate-400">• Note: Their account and personal documents are preserved.</p>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-2.5 rounded bg-red-950/60 border border-red-700 text-xs text-red-300 font-mono">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3.5">
+          <div>
+            <label className="text-[11px] font-mono text-slate-400 block mb-1">
+              Reason for Removal (Visible to Member)
+            </label>
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Session concluded / Policy violation"
+              className="w-full bg-[#0a0c13] border border-[#212638] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500/70 font-mono"
+            />
+          </div>
+
+          <div className="flex items-center justify-end space-x-3 pt-2">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg border border-[#262c42] bg-[#141724] text-xs font-mono text-slate-300 hover:bg-[#1c2236] hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-xs font-mono font-semibold text-white transition-colors shadow-lg shadow-red-950/50 flex items-center space-x-1.5"
+            >
+              {loading ? <span>Removing...</span> : <span>Confirm Removal</span>}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+interface RoomSettingsModalProps {
+  isOpen: boolean;
+  roomCode: string;
+  currentName: string;
+  currentMaxMembers: number;
+  onClose: () => void;
+  onConfirm: (settings: { name?: string; max_members?: number }) => Promise<void>;
+}
+
+export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
+  isOpen,
+  roomCode,
+  currentName,
+  currentMaxMembers,
+  onClose,
+  onConfirm,
+}) => {
+  const [name, setName] = useState(currentName);
+  const [maxMembers, setMaxMembers] = useState(currentMaxMembers || 10);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      await onConfirm({ name: name.trim(), max_members: Number(maxMembers) });
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-[#08090e]/85 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
+      <div className="bg-[#0f111a] border border-[#212638] rounded-xl max-w-md w-full p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-mono font-bold text-slate-100 flex items-center space-x-2">
+            <span>Room Settings:</span>
+            <span className="text-cyan-400">{roomCode}</span>
+          </h2>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-[#1a1f33] transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-2.5 rounded bg-red-950/60 border border-red-700 text-xs text-red-300 font-mono">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-[11px] font-mono text-slate-400 block mb-1">Room Name</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-[#0a0c13] border border-[#212638] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500/70 font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-mono text-slate-400 block mb-1">
+              Total Members Allowed (Capacity)
+            </label>
+            <select
+              value={maxMembers}
+              onChange={(e) => setMaxMembers(Number(e.target.value))}
+              className="w-full bg-[#0a0c13] border border-[#212638] rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500/70 font-mono"
+            >
+              <option value={3}>3 Members</option>
+              <option value={5}>5 Members</option>
+              <option value={10}>10 Members</option>
+              <option value={20}>20 Members</option>
+              <option value={50}>50 Members</option>
+              <option value={100}>100 Members</option>
+            </select>
+            <p className="text-[10px] text-slate-500 mt-1">Changes take effect immediately across all connected peers.</p>
+          </div>
+
+          <div className="flex items-center justify-end space-x-3 pt-2">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg border border-[#262c42] bg-[#141724] text-xs font-mono text-slate-300 hover:bg-[#1c2236] hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-xs font-mono font-semibold text-slate-950 transition-colors shadow-lg shadow-cyan-950/50"
+            >
+              {loading ? <span>Saving...</span> : <span>Save Changes</span>}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};

@@ -118,11 +118,11 @@ async def vote_approval(
     db: AsyncSession = Depends(get_db)
 ):
     room, member = await get_room_and_membership(code, user, db)
-    # Only key_holder or owner can cast approvals
-    if member.role not in ("owner", "key_holder"):
+    # Only key_holder, co_host, or owner can cast approvals
+    if member.role not in ("owner", "key_holder", "co_host"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only designated Key Holders or Room Owners can approve threshold key access"
+            detail="Only designated Key Holders, Room Hosts, or Co-Hosts can approve threshold key access"
         )
 
     res = await db.execute(

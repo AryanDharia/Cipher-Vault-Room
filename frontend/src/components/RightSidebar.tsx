@@ -11,7 +11,11 @@ import {
   UserCheck,
   Activity,
   Sliders,
-  Award
+  Award,
+  Crown,
+  Shield,
+  UserMinus,
+  Settings
 } from 'lucide-react';
 import { RoomUser } from '../lib/websocket';
 
@@ -19,12 +23,16 @@ interface RightSidebarProps {
   roomCode: string;
   thresholdRequired: number;
   thresholdTotal: number;
+  maxMembers?: number;
   members: any[];
   onlineUsers: RoomUser[];
   currentUserRole: string;
+  currentUserId?: string;
   approvals: any[];
   onVoteApproval: (approvalId: string, decision: 'approve' | 'reject') => void;
   onUpdateRole: (userId: string, newRole: string) => void;
+  onRequestKickMember?: (member: any) => void;
+  onOpenSettings?: () => void;
   onStartHeist: () => void;
   onEvaluateAnomaly: (metrics: any) => Promise<any>;
 }
@@ -33,12 +41,16 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   roomCode,
   thresholdRequired,
   thresholdTotal,
+  maxMembers = 20,
   members,
   onlineUsers,
   currentUserRole,
+  currentUserId,
   approvals,
   onVoteApproval,
   onUpdateRole,
+  onRequestKickMember,
+  onOpenSettings,
   onStartHeist,
   onEvaluateAnomaly,
 }) => {
@@ -259,16 +271,33 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       {/* TAB 2: ROOM MEMBERS & PERMISSIONS */}
       {activeTab === 'members' && (
         <div className="flex-1 flex flex-col p-3 overflow-y-auto space-y-3">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
-              Room Participants ({participantList.length})
-            </span>
-            <span className="text-[10px] font-mono text-emerald-400">
-              {onlineUsers.length} Online Now
-            </span>
+          <div className="flex items-center justify-between mb-1 pb-2 border-b border-[#1b2033]">
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-slate-300 font-semibold flex items-center space-x-1.5">
+                <span>Room Capacity</span>
+                <span className="text-cyan-400 font-bold">
+                  ({participantList.length} / {maxMembers})
+                </span>
+              </div>
+              <div className="text-[10px] font-mono text-emerald-400 mt-0.5">
+                {onlineUsers.length} Online Collaborators
+              </div>
+            </div>
+
+            {(currentUserRole === 'owner' || currentUserRole === 'co_host') && onOpenSettings && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="px-2 py-1 rounded bg-[#161a29] hover:bg-[#1f243b] border border-[#262c42] text-[10px] font-mono text-cyan-400 hover:text-white flex items-center space-x-1 transition-colors"
+                title="Adjust room settings and max capacity"
+              >
+                <Settings className="w-3 h-3" />
+                <span>Edit Capacity</span>
+              </button>
+            )}
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {participantList.length === 0 ? (
               <div className="text-center py-6 text-xs text-slate-500 border border-dashed border-[#1f2438] rounded">
                 No participants connected.
@@ -276,38 +305,99 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
             ) : (
               participantList.map((m) => {
                 const online = m.is_online;
+                const roleLower = (m.role || 'editor').toLowerCase();
+                const isHost = roleLower === 'owner';
+                const isCoHost = roleLower === 'co_host' || roleLower === 'cohost';
+                const isSelf = m.user_id === currentUserId;
+
+                // Host can kick anyone except themselves.
+                // Co-host can kick ordinary members (not host, not other co-hosts, not self).
+                const isCallerHost = currentUserRole === 'owner';
+                const isCallerCoHost = currentUserRole === 'co_host';
+                const canKick = !isSelf && !isHost && (isCallerHost || (isCallerCoHost && !isCoHost));
+
                 return (
                   <div
                     key={m.user_id}
-                    className="p-2.5 rounded bg-[#121522] border border-[#1f2438] flex items-center justify-between"
+                    className="p-2.5 rounded-lg bg-[#121522] border border-[#1f2438] hover:border-[#2a324d] transition-all"
                   >
-                    <div className="flex items-center space-x-2.5 truncate">
-                      <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${
-                          online ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-slate-600'
-                        }`}
-                        title={online ? 'Online now' : 'Offline'}
-                      />
-                      <div className="truncate">
-                        <div className="text-xs font-medium text-slate-200 truncate">{m.username}</div>
-                        <div className="text-[10px] font-mono text-slate-500 uppercase">{m.role}</div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2.5 truncate">
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 ${
+                            online ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-slate-600'
+                          }`}
+                          title={online ? 'Online now' : 'Offline'}
+                        />
+                        <div className="truncate">
+                          <div className="text-xs font-medium text-slate-100 truncate flex items-center space-x-1.5">
+                            <span>{m.username}</span>
+                            {isSelf && (
+                              <span className="text-[9px] font-mono text-slate-500">(You)</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Role Badge */}
+                      <div className="shrink-0 ml-2">
+                        {isHost ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-950/70 text-purple-300 border border-purple-800/60 flex items-center space-x-1">
+                            <Crown className="w-3 h-3 text-purple-400" />
+                            <span>HOST</span>
+                          </span>
+                        ) : isCoHost ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-950/70 text-blue-300 border border-blue-800/60 flex items-center space-x-1">
+                            <Shield className="w-3 h-3 text-blue-400" />
+                            <span>CO-HOST</span>
+                          </span>
+                        ) : roleLower === 'key_holder' ? (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950/60 text-amber-300 border border-amber-800/50">
+                            KEY HOLDER
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#181d2e] text-slate-400 border border-[#212638] uppercase">
+                            {m.role}
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    {currentUserRole === 'owner' && m.role !== 'owner' ? (
-                      <select
-                        value={m.role}
-                        onChange={(e) => onUpdateRole(m.user_id, e.target.value)}
-                        className="bg-[#0a0c13] border border-[#212638] rounded px-1.5 py-0.5 text-[10px] font-mono text-slate-300 focus:outline-none"
-                      >
-                        <option value="key_holder">Key Holder</option>
-                        <option value="editor">Editor</option>
-                        <option value="viewer">Viewer</option>
-                      </select>
-                    ) : (
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#181d2e] text-slate-400 border border-[#212638]">
-                        {m.role}
-                      </span>
+                    {/* Member Controls (Host / Co-host role changes & kick actions) */}
+                    {(isCallerHost || canKick) && !isSelf && (
+                      <div className="mt-2 pt-2 border-t border-[#1b2033] flex items-center justify-between">
+                        {/* Only Original Host can update roles */}
+                        {isCallerHost && !isHost ? (
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-[10px] font-mono text-slate-500">Role:</span>
+                            <select
+                              value={isCoHost ? 'co_host' : m.role}
+                              onChange={(e) => onUpdateRole(m.user_id, e.target.value)}
+                              className="bg-[#0a0c13] border border-[#212638] rounded px-1.5 py-0.5 text-[10px] font-mono text-slate-300 focus:outline-none focus:border-cyan-500/50"
+                            >
+                              <option value="co_host">Promote to Co-Host</option>
+                              <option value="key_holder">Key Holder</option>
+                              <option value="editor">Editor</option>
+                              <option value="viewer">Viewer</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <div />
+                        )}
+
+                        {/* Kick Member button with confirmation */}
+                        {canKick && (
+                          <button
+                            type="button"
+                            onClick={() => onRequestKickMember?.(m)}
+                            className="px-2 py-0.5 rounded text-[10px] font-mono text-red-400 hover:text-red-300 bg-red-950/30 hover:bg-red-950/60 border border-red-900/50 flex items-center space-x-1 transition-colors"
+                            title={`Remove ${m.username} from room`}
+                          >
+                            <UserMinus className="w-3 h-3" />
+                            <span>Kick</span>
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
