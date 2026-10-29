@@ -4,9 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.database.session import get_db
-from app.database.models import User
+from app.database.models import User, Room
 from app.auth.security import hash_password, verify_password, create_access_token
 from app.auth.dependencies import get_current_user
+from app.rooms.service import RoomService
+from app.collaboration.manager import manager
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -17,6 +19,9 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="Account username")
     password: str = Field(..., min_length=1, description="Account password")
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(..., min_length=1, description="Password confirmation for account deletion")
 
 class UserInfo(BaseModel):
     id: str
@@ -99,4 +104,56 @@ async def get_me(user: User = Depends(get_current_user)):
         "username": user.username,
         "role": user.role,
         "created_at": user.created_at.isoformat()
+    }
+
+@router.delete("/account")
+async def delete_account(
+    req: DeleteAccountRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Permanently delete the authenticated user's account, owned rooms,
+    memberships, and credentials. Requires password re-authentication.
+    """
+    if not verify_password(req.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password. Account deletion aborted."
+        )
+
+    user_id = user.id
+    username = user.username
+
+    # 1. Permanently delete all rooms created/owned by this user
+    owned_rooms_res = await db.execute(select(Room).where(Room.creator_id == user_id))
+    owned_rooms = owned_rooms_res.scalars().all()
+    for room in owned_rooms:
+        await RoomService.delete_room(db, room)
+
+    # 2. Clean up any remaining authored/referenced records in other rooms
+    from sqlalchemy import delete
+    from app.database.models import (
+        ExportRecord, AuditEvent, SourceItem, VaultSecret,
+        ThresholdApproval, RoomMember
+    )
+
+    await db.execute(delete(ExportRecord).where(ExportRecord.user_id == user_id))
+    await db.execute(delete(AuditEvent).where(AuditEvent.user_id == user_id))
+    await db.execute(delete(SourceItem).where(SourceItem.created_by == user_id))
+    await db.execute(delete(VaultSecret).where(VaultSecret.created_by == user_id))
+    await db.execute(delete(ThresholdApproval).where(ThresholdApproval.requested_by == user_id))
+    await db.execute(delete(RoomMember).where(RoomMember.user_id == user_id))
+
+    # 3. Disconnect any active WebSocket connections for this user
+    await manager.disconnect_user(user_id, reason="Account has been permanently deleted")
+
+    # 4. Delete the User account record
+    await db.delete(user)
+    await db.commit()
+
+    return {
+        "status": "success",
+        "username": username,
+        "message": "Account and all associated resources permanently deleted"
     }

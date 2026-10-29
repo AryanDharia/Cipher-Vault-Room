@@ -171,3 +171,54 @@ class RoomService:
                 "last_seen_at": member.last_seen_at.isoformat()
             })
         return members_data
+
+    @staticmethod
+    async def delete_room(db: AsyncSession, room: Room) -> bool:
+        """
+        Permanently delete a room and all child records in foreign-key safe dependency order:
+        ExportRecord -> AuditEvent -> SourceItem -> VaultSecret -> ThresholdApproval -> Document -> RoomMember -> Room.
+        Then terminates all in-memory connections and notifies connected clients via WebSocket.
+        """
+        from sqlalchemy import delete
+        from app.database.models import (
+            ExportRecord, AuditEvent, SourceItem, VaultSecret,
+            ThresholdApproval, Document, RoomMember
+        )
+        from app.collaboration.manager import manager
+
+        room_id = room.id
+        code = room.code
+
+        # Delete dependent records
+        await db.execute(delete(ExportRecord).where(ExportRecord.room_id == room_id))
+        await db.execute(delete(AuditEvent).where(AuditEvent.room_id == room_id))
+        await db.execute(delete(SourceItem).where(SourceItem.room_id == room_id))
+        await db.execute(delete(VaultSecret).where(VaultSecret.room_id == room_id))
+        await db.execute(delete(ThresholdApproval).where(ThresholdApproval.room_id == room_id))
+        await db.execute(delete(Document).where(Document.room_id == room_id))
+        await db.execute(delete(RoomMember).where(RoomMember.room_id == room_id))
+
+        # Delete room itself
+        await db.delete(room)
+        await db.commit()
+
+        # Terminate active WebSocket connections and purge in-memory state
+        await manager.terminate_room(code, reason="Room has been permanently deleted by the host")
+        return True
+
+    @staticmethod
+    async def clean_expired_rooms(db: AsyncSession) -> int:
+        """
+        Safely clean up rooms that have passed their expiration timestamp.
+        """
+        from sqlalchemy import and_
+        now = utcnow()
+        result = await db.execute(
+            select(Room).where(and_(Room.expires_at.is_not(None), Room.expires_at < now))
+        )
+        expired_rooms = result.scalars().all()
+        count = 0
+        for r in expired_rooms:
+            await RoomService.delete_room(db, r)
+            count += 1
+        return count

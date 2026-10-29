@@ -7,6 +7,7 @@ import { ActivityFeed } from './components/ActivityFeed';
 import { HeistModal } from './components/HeistModal';
 import { AuthModal } from './components/AuthModal';
 import { RoomModal } from './components/RoomModal';
+import { SignOutModal, DeleteRoomModal, DeleteAccountModal } from './components/ConfirmModal';
 import { api } from './lib/api';
 import { VaultWebSocket, ConnectionState, RoomUser } from './lib/websocket';
 import { encryptEnvelope, decryptEnvelope, deriveRoomKey } from './lib/crypto';
@@ -41,6 +42,11 @@ export function App() {
   // UI state
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [showHeistModal, setShowHeistModal] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [showDeleteRoomModal, setShowDeleteRoomModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [bannerNotification, setBannerNotification] = useState<string | null>(null);
   const [activeRightTab, setActiveRightTab] = useState<string>('approvals');
 
   const wsRef = useRef<VaultWebSocket | null>(null);
@@ -195,6 +201,33 @@ export function App() {
     ws.on('AUTH_EXPIRED', () => {
       api.setToken(null);
       setUser(null);
+    });
+
+    ws.on('ROOM_DELETED', (data) => {
+      console.warn('[App] ROOM_DELETED received:', data);
+      if (roomCode) {
+        localStorage.removeItem('vaultroom_active_room_code');
+        localStorage.removeItem(`vaultroom_pass_${roomCode}`);
+        sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+        localStorage.removeItem(`vaultroom_doc_${roomCode}`);
+      }
+      wsRef.current?.disconnect();
+      setRoomCode(null);
+      setRoomKey(null);
+      setDocuments([]);
+      setActiveDocId(null);
+      setMembers([]);
+      setOnlineUsers([]);
+      setBannerNotification(data.message || 'This room has been permanently deleted by the host.');
+    });
+
+    ws.on('AUTH_REVOKED', (data) => {
+      console.warn('[App] AUTH_REVOKED received:', data);
+      api.setToken(null);
+      setUser(null);
+      setRoomCode(null);
+      setRoomKey(null);
+      setBannerNotification(data.message || 'Your account credentials have been revoked.');
     });
 
     ws.on('THRESHOLD_APPROVAL_REQUESTED', () => {
@@ -505,12 +538,86 @@ export function App() {
     );
   }
 
+  const handleConfirmSignOut = () => {
+    if (roomCode) {
+      localStorage.removeItem('vaultroom_active_room_code');
+      localStorage.removeItem(`vaultroom_pass_${roomCode}`);
+      sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+      localStorage.removeItem(`vaultroom_doc_${roomCode}`);
+    }
+    wsRef.current?.disconnect();
+    api.setToken(null);
+    setUser(null);
+    setRoomCode(null);
+    setRoomKey(null);
+    setDocuments([]);
+    setMembers([]);
+    setOnlineUsers([]);
+    setShowSignOutModal(false);
+    setHasUnsavedChanges(false);
+  };
+
+  const handleConfirmDeleteRoom = async () => {
+    if (!roomCode) return;
+    const currentCode = roomCode;
+    await api.deleteRoom(currentCode);
+    localStorage.removeItem('vaultroom_active_room_code');
+    localStorage.removeItem(`vaultroom_pass_${currentCode}`);
+    sessionStorage.removeItem(`vaultroom_pass_${currentCode}`);
+    localStorage.removeItem(`vaultroom_doc_${currentCode}`);
+    wsRef.current?.disconnect();
+    setRoomCode(null);
+    setRoomKey(null);
+    setDocuments([]);
+    setActiveDocId(null);
+    setMembers([]);
+    setOnlineUsers([]);
+    setShowDeleteRoomModal(false);
+    setBannerNotification(`Room ${currentCode} and all its documents were permanently deleted.`);
+  };
+
+  const handleConfirmDeleteAccount = async (password: string) => {
+    await api.deleteAccount(password);
+    if (roomCode) {
+      localStorage.removeItem('vaultroom_active_room_code');
+      localStorage.removeItem(`vaultroom_pass_${roomCode}`);
+      sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+      localStorage.removeItem(`vaultroom_doc_${roomCode}`);
+    }
+    wsRef.current?.disconnect();
+    api.setToken(null);
+    setUser(null);
+    setRoomCode(null);
+    setRoomKey(null);
+    setDocuments([]);
+    setMembers([]);
+    setOnlineUsers([]);
+    setShowDeleteAccountModal(false);
+    setBannerNotification('Your account and all associated rooms have been permanently deleted.');
+  };
+
   if (!user) {
     return <AuthModal onSuccess={(u) => setUser(u)} />;
   }
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0a0b10] text-slate-100 overflow-hidden font-sans">
+      {/* Banner Notification (e.g. room/account deletion alerts) */}
+      {bannerNotification && (
+        <div className="bg-cyan-950/90 border-b border-cyan-800/60 px-4 py-2 flex items-center justify-between text-xs font-mono text-cyan-200 z-40 animate-fadeIn">
+          <div className="flex items-center space-x-2">
+            <span className="w-2 h-2 rounded-full bg-cyan-400" />
+            <span>{bannerNotification}</span>
+          </div>
+          <button
+            onClick={() => setBannerNotification(null)}
+            className="text-cyan-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-cyan-900/50"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Top Navigation */}
       <Navbar
         roomCode={roomCode}
@@ -519,6 +626,7 @@ export function App() {
         lockReason={lockReason}
         connectionState={connectionState}
         user={user}
+        currentUserRole={currentUserRole}
         onLeaveRoom={() => {
           if (roomCode) {
             localStorage.removeItem('vaultroom_active_room_code');
@@ -532,21 +640,9 @@ export function App() {
           setMembers([]);
           setOnlineUsers([]);
         }}
-        onLogout={() => {
-          if (roomCode) {
-            localStorage.removeItem('vaultroom_active_room_code');
-            localStorage.removeItem(`vaultroom_pass_${roomCode}`);
-            sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
-            localStorage.removeItem(`vaultroom_doc_${roomCode}`);
-          }
-          api.setToken(null);
-          setUser(null);
-          setRoomCode(null);
-          setRoomKey(null);
-          setDocuments([]);
-          setMembers([]);
-          setOnlineUsers([]);
-        }}
+        onLogout={() => setShowSignOutModal(true)}
+        onDeleteRoom={() => setShowDeleteRoomModal(true)}
+        onOpenDeleteAccount={() => setShowDeleteAccountModal(true)}
         onOpenHeist={() => setShowHeistModal(true)}
         onToggleLock={handleToggleLock}
         activeRightTab={activeRightTab}
@@ -588,6 +684,7 @@ export function App() {
               currentUserRole={currentUserRole}
               onSaveDocument={handleSaveDocument}
               onBroadcastDelta={handleBroadcastDelta}
+              onSaveStatusChange={(status) => setHasUnsavedChanges(status === 'unsaved')}
               latestDelta={latestDelta}
               remoteDeltas={remoteDeltas}
             />
@@ -628,6 +725,32 @@ export function App() {
           }}
         />
       )}
+
+      {/* Sign-Out Confirmation Modal */}
+      <SignOutModal
+        isOpen={showSignOutModal}
+        onClose={() => setShowSignOutModal(false)}
+        onConfirm={handleConfirmSignOut}
+        hasUnsavedChanges={hasUnsavedChanges}
+      />
+
+      {/* Host-Only Room Deletion Modal */}
+      {roomCode && (
+        <DeleteRoomModal
+          isOpen={showDeleteRoomModal}
+          roomCode={roomCode}
+          onClose={() => setShowDeleteRoomModal(false)}
+          onConfirm={handleConfirmDeleteRoom}
+        />
+      )}
+
+      {/* Account Deletion Modal */}
+      <DeleteAccountModal
+        isOpen={showDeleteAccountModal}
+        username={user?.username || ''}
+        onClose={() => setShowDeleteAccountModal(false)}
+        onConfirm={handleConfirmDeleteAccount}
+      />
     </div>
   );
 }

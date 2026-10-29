@@ -91,11 +91,24 @@ class ApiClient {
     return this.request<any>('/auth/me');
   }
 
+  async deleteAccount(password: string) {
+    return this.request<{ status: string; message: string }>('/auth/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    });
+  }
+
   // Rooms
   async createRoom(data: { name: string; threshold_required: number; threshold_total: number }) {
     return this.request<any>('/rooms', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async deleteRoom(code: string) {
+    return this.request<{ status: string; message: string }>(`/rooms/${code}`, {
+      method: 'DELETE',
     });
   }
 

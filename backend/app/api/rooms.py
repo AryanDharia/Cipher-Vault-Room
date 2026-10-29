@@ -232,3 +232,55 @@ async def update_member_role(
     })
 
     return {"status": "success", "new_role": req.role}
+
+@router.delete("/{code}")
+async def delete_room(
+    code: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Host-only room deletion: permanently deletes room and all associated documents,
+    records, and in-memory state. Immediately notifies all connected peers.
+    """
+    normalized = normalize_room_code(code)
+    room = await RoomService.get_by_code(db, normalized)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+
+    # Verify host authorization: creator_id == user.id or member.role == 'owner'
+    is_host = room.creator_id == user.id
+    if not is_host:
+        member_res = await db.execute(
+            select(RoomMember).where(RoomMember.room_id == room.id, RoomMember.user_id == user.id)
+        )
+        member = member_res.scalar_one_or_none()
+        if member and member.role == "owner":
+            is_host = True
+
+    if not is_host:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room host can delete this room"
+        )
+
+    await RoomService.delete_room(db, room)
+    return {
+        "status": "success",
+        "room_code": normalized,
+        "message": "Room and all associated records permanently deleted"
+    }
+
+@router.post("/maintenance/cleanup-expired")
+async def cleanup_expired_rooms(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Safely clean up rooms that have passed their expiration timestamp.
+    """
+    deleted_count = await RoomService.clean_expired_rooms(db)
+    return {
+        "status": "success",
+        "deleted_count": deleted_count
+    }

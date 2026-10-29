@@ -303,4 +303,55 @@ class RoomConnectionManager:
 
         self._cleanup_stale_rate_limits()
 
+    async def terminate_room(self, room_code: str, reason: str = "Room has been permanently deleted by the host"):
+        """
+        Permanently terminate a room: notify all connected clients with ROOM_DELETED,
+        close all WebSockets cleanly, and purge all in-memory presence and state.
+        """
+        code = normalize_room_code(room_code)
+        room_conns = self.active_rooms.pop(code, {})
+        self.room_presence.pop(code, None)
+
+        logger.info(f"[WS ROOM TERMINATE] Terminating room '{code}' ({len(room_conns)} connected clients).")
+
+        for socket_id, client in list(room_conns.items()):
+            self.rate_limits.pop(socket_id, None)
+            ws: WebSocket = client.get("ws")
+            if ws:
+                try:
+                    await ws.send_json({
+                        "type": "ROOM_DELETED",
+                        "room_code": code,
+                        "message": reason
+                    })
+                except Exception as e:
+                    logger.debug(f"[WS NOTIFY ERR] Socket {socket_id}: {e}")
+
+                try:
+                    await ws.close(code=1000, reason=reason)
+                except Exception as e:
+                    logger.debug(f"[WS CLOSE ERR] Socket {socket_id}: {e}")
+
+        logger.info(f"[WS ROOM TERMINATED] Room '{code}' successfully purged from memory.")
+
+    async def disconnect_user(self, user_id: str, reason: str = "Account has been permanently deleted"):
+        """
+        Disconnect all active sockets for a specific user across all rooms.
+        Used when an account is deleted or revoked.
+        """
+        for code, conns in list(self.active_rooms.items()):
+            for socket_id, client in list(conns.items()):
+                if client.get("user_id") == user_id:
+                    ws: WebSocket = client.get("ws")
+                    if ws:
+                        try:
+                            await ws.send_json({
+                                "type": "AUTH_REVOKED",
+                                "message": reason
+                            })
+                            await ws.close(code=1008, reason=reason)
+                        except Exception:
+                            pass
+                    await self.disconnect(code, socket_id)
+
 manager = RoomConnectionManager()

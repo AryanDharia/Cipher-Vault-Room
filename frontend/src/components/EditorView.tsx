@@ -30,6 +30,7 @@ interface EditorViewProps {
   currentUserRole: string;
   onSaveDocument: (docId: string, encryptedEnvelope: string) => Promise<void>;
   onBroadcastDelta: (docId: string, encryptedPayload: string) => void;
+  onSaveStatusChange?: (status: 'saved' | 'saving' | 'unsaved') => void;
   latestDelta?: any;
   remoteDeltas?: any[];
 }
@@ -42,12 +43,18 @@ export const EditorView: React.FC<EditorViewProps> = ({
   currentUserRole,
   onSaveDocument,
   onBroadcastDelta,
+  onSaveStatusChange,
   latestDelta,
   remoteDeltas,
 }) => {
   const [plaintext, setPlaintext] = useState<string>('');
   const [isDecrypting, setIsDecrypting] = useState<boolean>(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
+
+  const updateSaveStatus = (status: 'saved' | 'saving' | 'unsaved') => {
+    setSaveStatus(status);
+    onSaveStatusChange?.(status);
+  };
   const [autoMask, setAutoMask] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
   const [exportResult, setExportResult] = useState<any | null>(null);
@@ -76,7 +83,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
       const html = editor.getHTML();
       setPlaintext(html);
-      setSaveStatus('unsaved');
+      updateSaveStatus('unsaved');
 
       // 1. FAST REAL-TIME BROADCAST: 120ms debounce delivers keystrokes to peers instantly
       if (broadcastTimerRef.current) {
@@ -99,12 +106,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
       autoSaveTimerRef.current = window.setTimeout(async () => {
         if (!roomKey || !doc) return;
         try {
-          setSaveStatus('saving');
+          updateSaveStatus('saving');
           const envelope = await encryptEnvelope(html, roomKey);
           await onSaveDocument(doc.id, JSON.stringify(envelope));
-          setSaveStatus('saved');
+          updateSaveStatus('saved');
         } catch {
-          setSaveStatus('unsaved');
+          updateSaveStatus('unsaved');
         }
       }, 1500);
     },
@@ -135,7 +142,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           setPlaintext(initial);
           editor?.commands.setContent(initial);
           setIsDecrypting(false);
-          setSaveStatus('saved');
+          updateSaveStatus('saved');
         }
         return;
       }
@@ -154,7 +161,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           setPlaintext(decrypted);
           editor?.commands.setContent(decrypted);
           setIsDecrypting(false);
-          setSaveStatus('saved');
+          updateSaveStatus('saved');
         }
       } catch (err) {
         if (active) {
@@ -184,7 +191,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           // In TipTap, passing false as second argument suppresses the onUpdate event
           editor.commands.setContent(incomingText, false);
           setPlaintext(incomingText);
-          setSaveStatus('saved');
+          updateSaveStatus('saved');
           setTimeout(() => {
             isRemoteUpdateRef.current = false;
           }, 80);
@@ -198,7 +205,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // Encrypt & Save Document
   const handleSave = async () => {
     if (!doc || !roomKey || saveStatus === 'saving') return;
-    setSaveStatus('saving');
+    updateSaveStatus('saving');
 
     try {
       const currentContent = editor ? editor.getHTML() : plaintext;
@@ -208,9 +215,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
       await onSaveDocument(doc.id, envelopeStr);
       // Broadcast encrypted delta to other participants
       onBroadcastDelta(doc.id, envelopeStr);
-      setSaveStatus('saved');
+      updateSaveStatus('saved');
     } catch {
-      setSaveStatus('unsaved');
+      updateSaveStatus('unsaved');
     }
   };
 
@@ -398,7 +405,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               value={autoMask ? maskSensitiveNumbers(plaintext) : plaintext}
               onChange={(e) => {
                 setPlaintext(e.target.value);
-                setSaveStatus('unsaved');
+                updateSaveStatus('unsaved');
               }}
               disabled={isLocked || currentUserRole === 'viewer'}
               className="flex-1 w-full bg-[#0a0c13] font-mono text-sm leading-relaxed text-cyan-300 p-4 rounded-lg border border-[#1f2438] focus:outline-none focus:border-cyan-500/50 resize-none"

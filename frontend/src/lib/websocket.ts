@@ -88,6 +88,10 @@ export class VaultWebSocket {
           if (msg.type !== 'PONG') {
             console.log(`[VaultWebSocket] Received event: ${msg.type}`);
           }
+          if (msg.type === 'ROOM_DELETED') {
+            this.isExplicitlyClosed = true;
+            this.stopHeartbeat();
+          }
           this.emit(msg.type, msg);
         } catch {
           // ignore corrupted packets
@@ -100,10 +104,20 @@ export class VaultWebSocket {
         this.setState('disconnected');
 
         if (!this.isExplicitlyClosed) {
-          // Don't reconnect if auth policy was explicitly violated
-          if (event.code === 1008 && event.reason?.includes('expired')) {
-            console.error('[VaultWebSocket] Token expired or invalid. Authentication required.');
-            this.emit('AUTH_EXPIRED', { reason: event.reason });
+          const reasonLower = (event.reason || '').toLowerCase();
+          // Never attempt to reconnect if room was deleted or terminated
+          if (reasonLower.includes('deleted') || reasonLower.includes('terminated')) {
+            console.warn('[VaultWebSocket] Room deleted. Reconnect loop aborted.');
+            this.isExplicitlyClosed = true;
+            return;
+          }
+          // Don't reconnect if auth policy was explicitly violated or room does not exist
+          if (event.code === 1008) {
+            console.error(`[VaultWebSocket] Policy violation (${event.reason}). Reconnect aborted.`);
+            this.isExplicitlyClosed = true;
+            if (reasonLower.includes('expired')) {
+              this.emit('AUTH_EXPIRED', { reason: event.reason });
+            }
             return;
           }
           this.scheduleReconnect();
