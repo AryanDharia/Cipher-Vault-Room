@@ -116,6 +116,10 @@ Cipher Vault Room is configured to deploy to Render under **ONE public URL and O
 
 FastAPI automatically serves the built React SPA from `frontend/dist`, forwards `/api/` to REST routes, connects `/ws/` to WebSockets with `wss://` TLS support, and provides deep-link SPA fallback for room URLs.
 
+## Optional Cloudflare Pages Frontend
+
+Cloudflare Pages can host the React/Vite static frontend while the existing FastAPI, PostgreSQL, and WebSocket backend remain on Render. This does not make VaultRoom a frontend-only application or remove its backend requirement. See [the Cloudflare deployment plan](docs/CLOUDFLARE_DEPLOYMENT.md) for Pages build settings, API/WebSocket variables, Python Worker compatibility notes, and a staging preview plan. No Cloudflare deployment is triggered by this repository configuration alone.
+
 ---
 
 ## Running the Automated Test Suite
