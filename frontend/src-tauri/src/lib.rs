@@ -44,8 +44,8 @@ mod credential_store {
     }
 
     pub fn set(name: &str, value: &str) -> Result<(), String> {
-        let target = wide(&format!("VaultRoom/{name}"));
-        let username = wide("VaultRoom");
+        let mut target = wide(&format!("VaultRoom/{name}"));
+        let mut username = wide("VaultRoom");
         let mut blob = value.as_bytes().to_vec();
         let credential = CREDENTIALW {
             Flags: 0,
