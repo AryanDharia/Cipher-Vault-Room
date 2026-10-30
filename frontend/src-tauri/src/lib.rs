@@ -16,6 +16,7 @@ fn valid_secret_name(name: &str) -> bool {
 mod credential_store {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::FILETIME;
     use windows_sys::Win32::Security::Credentials::{
         CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW,
         CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
@@ -51,7 +52,10 @@ mod credential_store {
             Type: CRED_TYPE_GENERIC,
             TargetName: target.as_mut_ptr(),
             Comment: std::ptr::null_mut(),
-            LastWritten: Default::default(),
+            LastWritten: FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
             CredentialBlobSize: blob.len() as u32,
             CredentialBlob: blob.as_mut_ptr(),
             Persist: CRED_PERSIST_LOCAL_MACHINE,
