@@ -175,6 +175,27 @@ export function App() {
     });
 
     ws.on('DOCUMENT_CREATED', (data) => {
+      if (data && data.doc_id && data.title) {
+        setDocuments((prev) => {
+          if (prev.some((d) => d.id === data.doc_id)) return prev;
+          return [
+            ...prev,
+            {
+              id: data.doc_id,
+              title: data.title,
+              doc_type: data.doc_type || 'document',
+              language: data.language || 'markdown',
+              is_protected: !!data.is_protected,
+              version: data.version || 1,
+              has_content: !!data.encrypted_envelope,
+              encrypted_envelope: data.encrypted_envelope,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ];
+        });
+        setActiveDocId((current) => current || data.doc_id);
+      }
       refreshDocuments();
       addAuditEvent({
         id: `ev-${Date.now()}`,
@@ -193,6 +214,22 @@ export function App() {
 
     ws.on('DOCUMENT_UPDATED', (data) => {
       console.log(`[App] DOCUMENT_UPDATED received for: ${data.doc_id}`);
+      if (data && data.doc_id) {
+        setDocuments((prev) =>
+          prev.map((d) =>
+            d.id === data.doc_id
+              ? {
+                  ...d,
+                  title: data.title ?? d.title,
+                  version: data.version ?? (d.version + 1),
+                  encrypted_envelope: data.encrypted_envelope ?? d.encrypted_envelope,
+                  has_content: true,
+                  updated_at: data.updated_at ?? new Date().toISOString(),
+                }
+              : d
+          )
+        );
+      }
       refreshDocuments();
     });
 
@@ -378,7 +415,15 @@ export function App() {
     if (!roomCode) return;
     try {
       const docs = await api.listDocuments(roomCode);
-      setDocuments(docs);
+      setDocuments((prev) => {
+        return docs.map((newDoc: any) => {
+          const existing = prev.find((p) => p.id === newDoc.id);
+          return {
+            ...newDoc,
+            encrypted_envelope: newDoc.encrypted_envelope ?? existing?.encrypted_envelope,
+          };
+        });
+      });
       if (docs.length > 0) {
         const savedDoc = localStorage.getItem(`vaultroom_doc_${roomCode}`);
         if (savedDoc && docs.some((d: any) => d.id === savedDoc)) {
@@ -507,7 +552,24 @@ export function App() {
 
   const handleSaveDocument = async (docId: string, encryptedEnvelope: string) => {
     if (!roomCode) return;
-    await api.updateDocument(roomCode, docId, { encrypted_envelope: encryptedEnvelope });
+    setDocuments((prev) =>
+      prev.map((d) =>
+        d.id === docId
+          ? {
+              ...d,
+              encrypted_envelope: encryptedEnvelope,
+              has_content: true,
+              version: (d.version || 1) + 1,
+            }
+          : d
+      )
+    );
+    const res = await api.updateDocument(roomCode, docId, { encrypted_envelope: encryptedEnvelope });
+    if (res && res.version) {
+      setDocuments((prev) =>
+        prev.map((d) => (d.id === docId ? { ...d, version: res.version } : d))
+      );
+    }
   };
 
   const handleBroadcastDelta = (docId: string, encryptedPayload: string) => {

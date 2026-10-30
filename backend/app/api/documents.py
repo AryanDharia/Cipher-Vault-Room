@@ -48,6 +48,7 @@ async def list_documents(
             "is_protected": d.is_protected,
             "version": d.version,
             "has_content": bool(d.encrypted_envelope),
+            "encrypted_envelope": d.encrypted_envelope,
             "created_at": d.created_at.isoformat(),
             "updated_at": d.updated_at.isoformat()
         }
@@ -95,6 +96,11 @@ async def create_document(
         "type": "DOCUMENT_CREATED",
         "doc_id": doc.id,
         "title": doc.title,
+        "doc_type": doc.doc_type,
+        "language": doc.language,
+        "is_protected": doc.is_protected,
+        "encrypted_envelope": doc.encrypted_envelope,
+        "version": doc.version,
         "created_by": user.username
     })
 
@@ -105,6 +111,7 @@ async def create_document(
         "language": doc.language,
         "is_protected": doc.is_protected,
         "encrypted_envelope": doc.encrypted_envelope,
+        "has_content": bool(doc.encrypted_envelope),
         "version": doc.version
     }
 
@@ -176,6 +183,7 @@ async def update_document(
         "doc_id": doc.id,
         "title": doc.title,
         "version": doc.version,
+        "encrypted_envelope": doc.encrypted_envelope,
         "updated_at": doc.updated_at.isoformat()
     })
 
@@ -185,6 +193,8 @@ async def update_document(
         "doc_type": doc.doc_type,
         "language": doc.language,
         "is_protected": doc.is_protected,
+        "encrypted_envelope": doc.encrypted_envelope,
+        "has_content": bool(doc.encrypted_envelope),
         "version": doc.version,
         "updated_at": doc.updated_at.isoformat()
     }

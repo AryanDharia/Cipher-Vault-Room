@@ -72,6 +72,42 @@ export const EditorView: React.FC<EditorViewProps> = ({
     });
   };
 
+  // Unified content change handler for rich text and code editing
+  const handleContentChange = (newContent: string) => {
+    setPlaintext(newContent);
+    updateSaveStatus('unsaved');
+
+    // 1. FAST REAL-TIME BROADCAST: 120ms debounce delivers keystrokes to peers instantly
+    if (broadcastTimerRef.current) {
+      window.clearTimeout(broadcastTimerRef.current);
+    }
+    broadcastTimerRef.current = window.setTimeout(async () => {
+      if (!roomKey || !doc) return;
+      try {
+        const envelope = await encryptEnvelope(newContent, roomKey);
+        onBroadcastDelta(doc.id, JSON.stringify(envelope));
+      } catch {
+        // Encryption or broadcast skipped
+      }
+    }, 120);
+
+    // 2. PERSISTENT BACKGROUND AUTOSAVE: 1500ms debounce saves to database
+    if (autoSaveTimerRef.current) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = window.setTimeout(async () => {
+      if (!roomKey || !doc) return;
+      try {
+        updateSaveStatus('saving');
+        const envelope = await encryptEnvelope(newContent, roomKey);
+        await onSaveDocument(doc.id, JSON.stringify(envelope));
+        updateSaveStatus('saved');
+      } catch {
+        updateSaveStatus('unsaved');
+      }
+    }, 1500);
+  };
+
   // Setup TipTap Editor with instant real-time collaborative broadcast
   const editor = useEditor({
     extensions: [StarterKit],
@@ -80,40 +116,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     onUpdate: ({ editor }) => {
       // If the content change was injected from a remote collaborator, do NOT re-broadcast!
       if (isRemoteUpdateRef.current) return;
-
-      const html = editor.getHTML();
-      setPlaintext(html);
-      updateSaveStatus('unsaved');
-
-      // 1. FAST REAL-TIME BROADCAST: 120ms debounce delivers keystrokes to peers instantly
-      if (broadcastTimerRef.current) {
-        window.clearTimeout(broadcastTimerRef.current);
-      }
-      broadcastTimerRef.current = window.setTimeout(async () => {
-        if (!roomKey || !doc) return;
-        try {
-          const envelope = await encryptEnvelope(html, roomKey);
-          onBroadcastDelta(doc.id, JSON.stringify(envelope));
-        } catch {
-          // Encryption or broadcast skipped
-        }
-      }, 120);
-
-      // 2. PERSISTENT BACKGROUND AUTOSAVE: 1500ms debounce saves to database
-      if (autoSaveTimerRef.current) {
-        window.clearTimeout(autoSaveTimerRef.current);
-      }
-      autoSaveTimerRef.current = window.setTimeout(async () => {
-        if (!roomKey || !doc) return;
-        try {
-          updateSaveStatus('saving');
-          const envelope = await encryptEnvelope(html, roomKey);
-          await onSaveDocument(doc.id, JSON.stringify(envelope));
-          updateSaveStatus('saved');
-        } catch {
-          updateSaveStatus('unsaved');
-        }
-      }, 1500);
+      handleContentChange(editor.getHTML());
     },
   });
 
@@ -128,21 +131,47 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // Decrypt document when document or roomKey changes
   useEffect(() => {
     let active = true;
+    if (broadcastTimerRef.current) {
+      window.clearTimeout(broadcastTimerRef.current);
+      broadcastTimerRef.current = null;
+    }
+    if (autoSaveTimerRef.current) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+
     const loadAndDecrypt = async () => {
       if (!doc) return;
       setIsDecrypting(true);
 
-      if (!doc.encrypted_envelope) {
+      let envelope = doc.encrypted_envelope;
+      // Fallback: If envelope is missing but document has saved content in database, fetch it directly
+      if (!envelope && doc.has_content && roomCode) {
+        try {
+          const fullDoc = await api.getDocument(roomCode, doc.id);
+          if (fullDoc && fullDoc.encrypted_envelope) {
+            envelope = fullDoc.encrypted_envelope;
+          }
+        } catch (e) {
+          console.warn('[Editor] Failed to fetch full document envelope:', e);
+        }
+      }
+
+      if (!envelope) {
         // Empty document template
         const initial = doc.doc_type === 'code'
           ? `// VaultRoom Secure Code Document\n// File: ${doc.title}\n// Language: ${doc.language || 'typescript'}\n\nexport async function secureHandler() {\n  console.log("End-to-end encrypted execution context.");\n}\n`
           : `<h1>${doc.title}</h1><p>Start collaborating securely in this end-to-end encrypted document.</p>`;
         
         if (active) {
+          isRemoteUpdateRef.current = true;
           setPlaintext(initial);
-          editor?.commands.setContent(initial);
+          editor?.commands.setContent(initial, false);
           setIsDecrypting(false);
           updateSaveStatus('saved');
+          setTimeout(() => {
+            isRemoteUpdateRef.current = false;
+          }, 80);
         }
         return;
       }
@@ -156,10 +185,17 @@ export const EditorView: React.FC<EditorViewProps> = ({
       }
 
       try {
-        const decrypted = await decryptEnvelope(doc.encrypted_envelope, roomKey);
+        const decrypted = await decryptEnvelope(envelope, roomKey);
         if (active) {
-          setPlaintext(decrypted);
-          editor?.commands.setContent(decrypted);
+          const currentContent = doc.doc_type === 'code' ? plaintext : (editor ? editor.getHTML() : plaintext);
+          if (decrypted !== currentContent) {
+            isRemoteUpdateRef.current = true;
+            setPlaintext(decrypted);
+            editor?.commands.setContent(decrypted, false);
+            setTimeout(() => {
+              isRemoteUpdateRef.current = false;
+            }, 80);
+          }
           setIsDecrypting(false);
           updateSaveStatus('saved');
         }
@@ -178,19 +214,37 @@ export const EditorView: React.FC<EditorViewProps> = ({
   }, [doc?.id, doc?.encrypted_envelope, roomKey, editor]);
 
   // Handle remote incoming deltas
+  const lastAppliedTimestampRef = useRef<number>(0);
+
   useEffect(() => {
     const delta = latestDelta || (remoteDeltas && remoteDeltas.length > 0 ? remoteDeltas[remoteDeltas.length - 1] : null);
-    if (!delta || !roomKey || !editor || !doc) return;
+    if (!delta || !roomKey || !doc) return;
+
+    if (delta.timestamp && delta.timestamp <= lastAppliedTimestampRef.current) {
+      return;
+    }
 
     if (delta.document_id === doc.id) {
       decryptEnvelope(delta.encrypted_payload, roomKey).then((incomingText) => {
-        const currentContent = editor.getHTML();
+        const currentContent = doc.doc_type === 'code' ? plaintext : (editor ? editor.getHTML() : plaintext);
         if (incomingText && incomingText !== currentContent) {
           console.log(`[Editor] Applied real-time remote delta for document: ${doc.id}`);
+          lastAppliedTimestampRef.current = delta.timestamp || Date.now();
           isRemoteUpdateRef.current = true;
-          // In TipTap, passing false as second argument suppresses the onUpdate event
-          editor.commands.setContent(incomingText, false);
-          setPlaintext(incomingText);
+
+          if (doc.doc_type === 'code') {
+            setPlaintext(incomingText);
+          } else if (editor) {
+            const { from } = editor.state.selection;
+            editor.commands.setContent(incomingText, false);
+            setPlaintext(incomingText);
+            try {
+              const docSize = editor.state.doc.content.size;
+              const safePos = Math.min(from, docSize);
+              editor.commands.setTextSelection(safePos);
+            } catch {}
+          }
+
           updateSaveStatus('saved');
           setTimeout(() => {
             isRemoteUpdateRef.current = false;
@@ -200,15 +254,24 @@ export const EditorView: React.FC<EditorViewProps> = ({
         console.error('[Editor] Failed to decrypt remote delta. Verify room passphrase:', err);
       });
     }
-  }, [latestDelta, remoteDeltas, editor, doc?.id, roomKey]);
+  }, [latestDelta, remoteDeltas, editor, doc?.id, doc?.doc_type, roomKey]);
 
   // Encrypt & Save Document
   const handleSave = async () => {
     if (!doc || !roomKey || saveStatus === 'saving') return;
     updateSaveStatus('saving');
 
+    if (autoSaveTimerRef.current) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    if (broadcastTimerRef.current) {
+      window.clearTimeout(broadcastTimerRef.current);
+      broadcastTimerRef.current = null;
+    }
+
     try {
-      const currentContent = editor ? editor.getHTML() : plaintext;
+      const currentContent = doc.doc_type === 'code' ? plaintext : (editor ? editor.getHTML() : plaintext);
       const envelope = await encryptEnvelope(currentContent, roomKey);
       const envelopeStr = JSON.stringify(envelope);
 
@@ -230,7 +293,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       setExportResult(res);
 
       // Create downloadable file with embedded watermark
-      const content = editor ? editor.getText() : plaintext;
+      const content = doc.doc_type === 'code' ? plaintext : (editor ? editor.getText() : plaintext);
       const watermarkedContent = `/* ${res.watermark} */\n\n${content}`;
       const blob = new Blob([watermarkedContent], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -404,8 +467,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
             <textarea
               value={autoMask ? maskSensitiveNumbers(plaintext) : plaintext}
               onChange={(e) => {
-                setPlaintext(e.target.value);
-                updateSaveStatus('unsaved');
+                if (isRemoteUpdateRef.current) return;
+                handleContentChange(e.target.value);
               }}
               disabled={isLocked || currentUserRole === 'viewer'}
               className="flex-1 w-full bg-[#0a0c13] font-mono text-sm leading-relaxed text-cyan-300 p-4 rounded-lg border border-[#1f2438] focus:outline-none focus:border-cyan-500/50 resize-none"
