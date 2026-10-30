@@ -17,6 +17,7 @@ import {
   Unlock,
   Download,
   Save,
+  RefreshCw,
   CheckCircle,
   Eye,
   EyeOff,
@@ -25,6 +26,8 @@ import {
 } from 'lucide-react';
 import { encryptEnvelope, decryptEnvelope } from '../lib/crypto';
 import { api } from '../lib/api';
+import { collaborationOutbox } from '../lib/collaborationOutbox';
+import { synchronizeYDoc } from '../lib/collaborationSync';
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -48,8 +51,7 @@ interface EditorViewProps {
   roomKey: CryptoKey | null;
   isLocked: boolean;
   currentUserRole: string;
-  onSaveDocument: (docId: string, encryptedEnvelope: string) => Promise<void>;
-  onBroadcastDelta: (docId: string, updateId: string, encryptedPayload: string) => void;
+  onBroadcastDelta: (docId: string, updateId: string, encryptedPayload: string) => Promise<string | null>;
   onSaveStatusChange?: (status: 'saved' | 'saving' | 'unsaved') => void;
   latestDelta?: any;
   remoteDeltas?: any[];
@@ -62,19 +64,38 @@ export const EditorView: React.FC<EditorViewProps> = ({
   roomKey,
   isLocked,
   currentUserRole,
-  onSaveDocument,
   onBroadcastDelta,
   onSaveStatusChange,
   remoteDeltas,
   connectionState,
 }) => {
   const [plaintext, setPlaintext] = useState<string>('');
+  const plaintextRef = useRef('');
+  const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [isDecrypting, setIsDecrypting] = useState<boolean>(true);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'reconnecting' | 'unsaved' | 'failed'>('syncing');
+  const [syncError, setSyncErrorState] = useState<string | null>(null);
+  const syncErrorRef = useRef<string | null>(null);
+  const setSyncError = (message: string | null) => {
+    syncErrorRef.current = message;
+    setSyncErrorState(message);
+  };
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const syncPromiseRef = useRef<Promise<void> | null>(null);
+  const syncNowRef = useRef<(() => Promise<void>) | null>(null);
+  const outboxTailRef = useRef<Promise<void>>(Promise.resolve());
+  const localUpdatesAwaitingAckRef = useRef(0);
+  const localChangeRevisionRef = useRef(0);
+  const inFlightPersistenceRef = useRef(new Map<string, Promise<void>>());
+  const hasLocalSnapshotRef = useRef(false);
+  const snapshotSaveTimerRef = useRef<number | null>(null);
+  const snapshotSaveTailRef = useRef<Promise<void>>(Promise.resolve());
 
   const updateSaveStatus = (status: 'saved' | 'saving' | 'unsaved') => {
-    setSaveStatus(status);
-    onSaveStatusChange?.(status);
+    const statusWithPendingSync = status === 'saved' && localUpdatesAwaitingAckRef.current > 0 ? 'unsaved' : status;
+    setSaveStatus(statusWithPendingSync);
+    onSaveStatusChange?.(statusWithPendingSync);
   };
   const [autoMask, setAutoMask] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
@@ -83,7 +104,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null);
   const collabDocRef = useRef<Y.Doc | null>(null);
   const appliedUpdateIdsRef = useRef<Set<string>>(new Set());
-  const autoSaveTimerRef = useRef<number | null>(null);
   const REMOTE_ORIGIN = useMemo(() => ({}), []);
 
   // Auto-masking regex for credit cards (13-19 digits) and account numbers
@@ -94,27 +114,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
     });
   };
 
-  const scheduleSnapshotSave = (newContent: string) => {
-    if (autoSaveTimerRef.current) window.clearTimeout(autoSaveTimerRef.current);
-    autoSaveTimerRef.current = window.setTimeout(async () => {
-      if (!roomKey || !doc) return;
-      try {
-        updateSaveStatus('saving');
-        const content = doc.doc_type === 'code'
-          ? (collabDocRef.current?.getText('code').toString() ?? newContent)
-          : (editor?.getHTML() ?? newContent);
-        const envelope = await encryptEnvelope(content, roomKey);
-        await onSaveDocument(doc.id, JSON.stringify(envelope));
-        updateSaveStatus('saved');
-      } catch {
-        updateSaveStatus('unsaved');
-      }
-    }, 1500);
-  };
-
   // Code documents use Y.Text. Apply the changed range so concurrent typing
   // produces CRDT insert/delete operations instead of replacing whole snapshots.
   const handleContentChange = (newContent: string) => {
+    plaintextRef.current = newContent;
     setPlaintext(newContent);
     updateSaveStatus('unsaved');
     if (doc?.doc_type === 'code' && collabDocRef.current) {
@@ -132,7 +135,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
         if (insertion) sharedText.insert(prefix, insertion);
       });
     }
-    scheduleSnapshotSave(newContent);
   };
 
   const editorExtensions = useMemo(() => {
@@ -143,20 +145,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const editor = useEditor({
     extensions: editorExtensions,
-    editable: !isLocked && currentUserRole !== 'viewer',
-    onUpdate: ({ editor }) => {
-      if (doc?.doc_type === 'document') {
-        updateSaveStatus('unsaved');
-        scheduleSnapshotSave(editor.getHTML());
-      }
-    },
+    editable: !isLocked && currentUserRole !== 'viewer' && !isDecrypting && !!collabDoc,
   }, [collabDoc]);
-
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimerRef.current) window.clearTimeout(autoSaveTimerRef.current);
-    };
-  }, []);
 
   const loadYDoc = async (history: { updates: Array<{ update_id: string; encrypted_payload: string }> }) => {
     const ydoc = new Y.Doc();
@@ -172,26 +162,39 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // initial state; simultaneous first joins reload the winning encrypted seed.
   useEffect(() => {
     let active = true;
-    if (autoSaveTimerRef.current) {
-      window.clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
     setCollabDoc(null);
     collabDocRef.current?.destroy();
     collabDocRef.current = null;
     appliedUpdateIdsRef.current.clear();
+    hasLocalSnapshotRef.current = false;
+    if (snapshotSaveTimerRef.current) window.clearTimeout(snapshotSaveTimerRef.current);
     const prepare = async () => {
       if (!doc || !roomKey || !roomCode) return;
       setIsDecrypting(true);
       try {
-        let history = await api.listCollaborationUpdates(roomCode, doc.id);
-        let ydoc: Y.Doc;
-        if (history.initialized && !history.updates.length) {
+        let history: Awaited<ReturnType<typeof api.listCollaborationUpdates>>;
+        let ydoc: Y.Doc | null = null;
+        let restoredOffline = false;
+        try {
+          history = await api.listCollaborationUpdates(roomCode, doc.id);
+        } catch (error: any) {
+          // Authorization and deleted-room responses are authoritative. Only a
+          // transport failure may fall back to the encrypted device cache.
+          if (error?.status !== undefined) throw error;
+          const localSnapshot = await collaborationOutbox.getSnapshot(roomCode, doc.id);
+          if (!localSnapshot) throw error;
+          ydoc = new Y.Doc();
+          history = { initialized: true, updated_at: null, updates: [] };
+          restoredOffline = true;
+          setSyncStatus('offline');
+          setSyncError('The server is offline. Restored the last encrypted local document state.');
+        }
+        if (!ydoc && history.initialized && !history.updates.length) {
           throw new Error('Collaboration history is marked initialized but is missing its saved seed. Document was not modified.');
         }
-        if (history.initialized) {
+        if (!ydoc && history.initialized) {
           ydoc = await loadYDoc(history);
-        } else {
+        } else if (!ydoc) {
           let envelope = doc.encrypted_envelope;
           if (!envelope && doc.has_content) {
             const fullDoc = await api.getDocument(roomCode, doc.id);
@@ -219,11 +222,34 @@ export const EditorView: React.FC<EditorViewProps> = ({
             ydoc.destroy();
             history = await api.listCollaborationUpdates(roomCode, doc.id);
             ydoc = await loadYDoc(history);
+          } else {
+            setLastSyncedAt(new Date().toISOString());
           }
+        }
+        const localSnapshot = await collaborationOutbox.getSnapshot(roomCode, doc.id);
+        hasLocalSnapshotRef.current = !!localSnapshot;
+        if (localSnapshot) {
+          const cachedState = await decryptEnvelope(localSnapshot, roomKey);
+          Y.applyUpdate(ydoc!, base64ToBytes(cachedState), REMOTE_ORIGIN);
+        }
+        const pending = await collaborationOutbox.list(roomCode, doc.id);
+        localUpdatesAwaitingAckRef.current = pending.length;
+        for (const item of pending) {
+          if (appliedUpdateIdsRef.current.has(item.updateId)) continue;
+          const plain = await decryptEnvelope(item.encryptedPayload, roomKey);
+          Y.applyUpdate(ydoc!, base64ToBytes(plain), REMOTE_ORIGIN);
+          appliedUpdateIdsRef.current.add(item.updateId);
         }
         if (!active) { ydoc.destroy(); return; }
         collabDocRef.current = ydoc;
-        if (doc.doc_type === 'code') setPlaintext(ydoc.getText('code').toString());
+        if (doc.doc_type === 'code') {
+          const restoredText = ydoc.getText('code').toString();
+          plaintextRef.current = restoredText;
+          setPlaintext(restoredText);
+        }
+        setLastSyncedAt((current) => current ?? history.updated_at ?? null);
+        setSyncStatus(pending.length ? 'unsaved' : restoredOffline ? 'offline' : 'synced');
+        if (pending.length) updateSaveStatus('unsaved');
         setCollabDoc(ydoc);
         setIsDecrypting(false);
         updateSaveStatus('saved');
@@ -234,24 +260,152 @@ export const EditorView: React.FC<EditorViewProps> = ({
     void prepare();
     return () => {
       active = false;
+      if (snapshotSaveTimerRef.current) window.clearTimeout(snapshotSaveTimerRef.current);
       collabDocRef.current?.destroy();
       collabDocRef.current = null;
     };
   }, [doc?.id, roomCode, roomKey]);
 
-  // Local CRDT updates are encrypted and persisted/broadcast as independent events.
+  // Code editors are rendered from the same Y.Text that receives remote updates.
+  useEffect(() => {
+    if (!collabDoc || doc?.doc_type !== 'code') return;
+    const sharedText = collabDoc.getText('code');
+    const updatePlaintext = () => {
+      const nextText = sharedText.toString();
+      const previousText = plaintextRef.current;
+      if (nextText === previousText) return;
+      const textarea = codeTextareaRef.current;
+      if (textarea && window.document.activeElement === textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        let prefix = 0;
+        while (prefix < previousText.length && prefix < nextText.length && previousText[prefix] === nextText[prefix]) prefix++;
+        let suffix = 0;
+        while (suffix < previousText.length - prefix && suffix < nextText.length - prefix &&
+          previousText[previousText.length - 1 - suffix] === nextText[nextText.length - 1 - suffix]) suffix++;
+        const mapPosition = (position: number) => position <= prefix
+          ? position
+          : position >= previousText.length - suffix
+            ? Math.max(prefix, position + nextText.length - previousText.length)
+            : nextText.length - suffix;
+        const nextStart = mapPosition(start);
+        const nextEnd = mapPosition(end);
+        requestAnimationFrame(() => {
+          if (window.document.activeElement === textarea) textarea.setSelectionRange(nextStart, nextEnd);
+        });
+      }
+      plaintextRef.current = nextText;
+      setPlaintext(nextText);
+    };
+    sharedText.observe(updatePlaintext);
+    updatePlaintext();
+    return () => sharedText.unobserve(updatePlaintext);
+  }, [collabDoc, doc?.doc_type]);
+
+  const updateOutboxStatus = async (persistedAt?: string | null) => {
+    if (!doc) return;
+    const pending = await collaborationOutbox.list(roomCode, doc.id);
+    const pendingCount = Math.max(pending.length, localUpdatesAwaitingAckRef.current);
+    if (persistedAt) setLastSyncedAt(persistedAt);
+    if (!pendingCount && !syncPromiseRef.current) {
+      setSyncStatus(connectionState === 'connected' ? 'synced' : 'offline');
+      setSyncError(null);
+      if (connectionState === 'connected') {
+        updateSaveStatus('saved');
+        void clearLocalSnapshotIfSynced().catch((error) => console.warn('[Editor] Could not clear confirmed local cache:', error));
+      }
+    } else if (pendingCount) {
+      setSyncStatus(syncErrorRef.current ? 'failed' : 'unsaved');
+      updateSaveStatus('unsaved');
+    }
+  };
+
+  const saveLocalStateSnapshot = () => {
+    const saveTask = snapshotSaveTailRef.current.then(async () => {
+      const currentDoc = collabDocRef.current;
+      if (!currentDoc || !roomKey || !doc) throw new Error('Cannot preserve the local Yjs state');
+      const envelope = await encryptEnvelope(bytesToBase64(Y.encodeStateAsUpdate(currentDoc)), roomKey);
+      await collaborationOutbox.putSnapshot(roomCode, doc.id, JSON.stringify(envelope));
+      hasLocalSnapshotRef.current = true;
+    });
+    snapshotSaveTailRef.current = saveTask.catch((error) => {
+      hasLocalSnapshotRef.current = false;
+      setSyncError(error?.message || 'Could not preserve an encrypted offline document copy.');
+      setSyncStatus('failed');
+    });
+    return saveTask;
+  };
+
+  const scheduleLocalStateSnapshot = () => {
+    if (snapshotSaveTimerRef.current) window.clearTimeout(snapshotSaveTimerRef.current);
+    if (!hasLocalSnapshotRef.current) {
+      hasLocalSnapshotRef.current = true;
+      return saveLocalStateSnapshot();
+    }
+    snapshotSaveTimerRef.current = window.setTimeout(() => {
+      snapshotSaveTimerRef.current = null;
+      void saveLocalStateSnapshot();
+    }, 300);
+    return Promise.resolve();
+  };
+
+  const clearLocalSnapshotIfSynced = async () => {
+    if (!doc) return;
+    if (snapshotSaveTimerRef.current) {
+      window.clearTimeout(snapshotSaveTimerRef.current);
+      snapshotSaveTimerRef.current = null;
+    }
+    await snapshotSaveTailRef.current;
+    if (localUpdatesAwaitingAckRef.current > 0) return;
+    if ((await collaborationOutbox.list(roomCode, doc.id)).length) return;
+    await collaborationOutbox.removeSnapshot(roomCode, doc.id);
+    if (localUpdatesAwaitingAckRef.current === 0) hasLocalSnapshotRef.current = false;
+  };
+
+  // Local CRDT updates are encrypted and stored locally before network send.
   useEffect(() => {
     if (!collabDoc || !doc || !roomKey) return;
     const onUpdate = (update: Uint8Array, origin: unknown) => {
       if (origin === REMOTE_ORIGIN) return;
       const updateId = crypto.randomUUID();
-      void encryptEnvelope(bytesToBase64(update), roomKey)
-        .then((envelope) => onBroadcastDelta(doc.id, updateId, JSON.stringify(envelope)))
-        .catch((error) => console.error('[Editor] Failed to encrypt a collaboration update:', error));
+      setSyncError(null);
+      setSyncStatus('unsaved');
+      updateSaveStatus('unsaved');
+      localChangeRevisionRef.current += 1;
+      localUpdatesAwaitingAckRef.current += 1;
+      const snapshotReady = scheduleLocalStateSnapshot();
+      const persistTask = outboxTailRef.current.then(async () => {
+        const envelope = await encryptEnvelope(bytesToBase64(update), roomKey);
+        const encryptedPayload = JSON.stringify(envelope);
+        await collaborationOutbox.put({
+          roomCode: roomCode.toUpperCase(), documentId: doc.id, updateId,
+          encryptedPayload, createdAt: Date.now(),
+        });
+        await snapshotReady;
+        if (connectionState !== 'connected') return;
+        const sendTask = (async () => {
+          try {
+            const persistedAt = await onBroadcastDelta(doc.id, updateId, encryptedPayload);
+            await collaborationOutbox.remove(roomCode, doc.id, updateId);
+            localUpdatesAwaitingAckRef.current = Math.max(0, localUpdatesAwaitingAckRef.current - 1);
+            await updateOutboxStatus(persistedAt);
+          } catch (error: any) {
+            setSyncError(error?.message || 'The server has not confirmed this change. It is saved encrypted for retry.');
+            setSyncStatus('failed');
+          }
+        })();
+        inFlightPersistenceRef.current.set(updateId, sendTask);
+        void sendTask.finally(() => inFlightPersistenceRef.current.delete(updateId));
+      }).catch((error: any) => {
+        console.error('[Editor] Could not preserve an encrypted collaboration update:', error);
+        setSyncError(error?.message || 'Could not preserve this change for synchronization.');
+        setSyncStatus('failed');
+      });
+      outboxTailRef.current = persistTask;
     };
     collabDoc.on('update', onUpdate);
     return () => { collabDoc.off('update', onUpdate); };
-  }, [collabDoc, doc?.id, roomKey, onBroadcastDelta]);
+  }, [collabDoc, doc?.id, roomCode, roomKey, connectionState, onBroadcastDelta, onSaveStatusChange, REMOTE_ORIGIN]);
 
   useEffect(() => {
     if (!collabDoc || !roomKey || !doc || !remoteDeltas?.length) return;
@@ -264,34 +418,101 @@ export const EditorView: React.FC<EditorViewProps> = ({
       }
       void decryptEnvelope(delta.encrypted_payload, roomKey)
         .then((plain) => Y.applyUpdate(collabDoc, base64ToBytes(plain), REMOTE_ORIGIN))
-        .catch((error) => console.error('[Editor] Failed to apply encrypted Yjs update:', error));
+        .catch((error) => {
+          appliedUpdateIdsRef.current.delete(delta.update_id);
+          console.error('[Editor] Failed to apply encrypted Yjs update:', error);
+        });
     }
   }, [collabDoc, remoteDeltas, doc?.id, roomKey, REMOTE_ORIGIN]);
 
-  // Resend the merged state after reconnect; Yjs applies duplicate state updates idempotently.
-  useEffect(() => {
-    if (!collabDoc || !doc || !roomKey || connectionState !== 'connected') return;
-    const updateId = crypto.randomUUID();
-    void encryptEnvelope(bytesToBase64(Y.encodeStateAsUpdate(collabDoc)), roomKey)
-      .then((envelope) => onBroadcastDelta(doc.id, updateId, JSON.stringify(envelope)))
-      .catch((error) => console.error('[Editor] Failed to send collaboration state after reconnect:', error));
-  }, [collabDoc, connectionState, doc?.id, roomKey, onBroadcastDelta]);
+  const handleSyncNow = async () => {
+    if (syncPromiseRef.current) return syncPromiseRef.current;
+    if (!collabDoc || !doc || !roomKey) throw new Error('The encrypted document is not ready to sync');
+    if (connectionState !== 'connected') {
+      const pendingLocalChanges = localUpdatesAwaitingAckRef.current > 0;
+      setSyncStatus(connectionState === 'reconnecting' || connectionState === 'connecting'
+        ? 'reconnecting'
+        : pendingLocalChanges ? 'unsaved' : 'offline');
+      setSyncError('Connect to the room before retrying. Encrypted edits are retained on this device.');
+      throw new Error('This room is offline. Encrypted edits remain available for retry.');
+    }
+    const operation = (async () => {
+      setSyncStatus('syncing');
+      setSyncError(null);
+      try {
+        await outboxTailRef.current;
+        await Promise.all([...inFlightPersistenceRef.current.values()]);
+        const result = await synchronizeYDoc({
+          roomCode,
+          documentId: doc.id,
+          localDoc: collabDoc,
+          outbox: collaborationOutbox,
+          listServerHistory: () => api.listCollaborationUpdates(roomCode, doc.id),
+          publishPersisted: (updateId, encryptedPayload) => onBroadcastDelta(doc.id, updateId, encryptedPayload),
+          encryptUpdate: async (update) => JSON.stringify(await encryptEnvelope(bytesToBase64(update), roomKey)),
+          decryptUpdate: async (payload) => base64ToBytes(await decryptEnvelope(payload, roomKey)),
+          applyServerUpdate: (updateId, update) => {
+            Y.applyUpdate(collabDoc, update, REMOTE_ORIGIN);
+            appliedUpdateIdsRef.current.add(updateId);
+          },
+          hasAppliedUpdate: (updateId) => appliedUpdateIdsRef.current.has(updateId),
+        });
+        await outboxTailRef.current;
+        const revision = localChangeRevisionRef.current;
+        const pending = await collaborationOutbox.list(roomCode, doc.id);
+        const noConcurrentLocalEdit = revision === localChangeRevisionRef.current;
+        if (noConcurrentLocalEdit) localUpdatesAwaitingAckRef.current = pending.length;
+        const pendingCount = Math.max(pending.length, localUpdatesAwaitingAckRef.current);
+        if (result.lastSyncedAt) setLastSyncedAt(result.lastSyncedAt);
+        if (pendingCount || !noConcurrentLocalEdit) {
+          setSyncStatus('unsaved');
+          updateSaveStatus('unsaved');
+        } else {
+          setSyncStatus('synced');
+          setSyncError(null);
+          updateSaveStatus('saved');
+          void clearLocalSnapshotIfSynced().catch((error) => console.warn('[Editor] Could not clear confirmed local cache:', error));
+        }
+      } catch (error: any) {
+        const pending = await collaborationOutbox.list(roomCode, doc.id).catch(() => []);
+        setSyncStatus('failed');
+        setSyncError(error?.message || 'Synchronization failed. Retry to preserve and merge your changes.');
+        updateSaveStatus('unsaved');
+        throw error;
+      }
+    })();
+    syncPromiseRef.current = operation;
+    try {
+      await operation;
+    } finally {
+      syncPromiseRef.current = null;
+    }
+  };
 
-  // Encrypt & Save Document
+  syncNowRef.current = handleSyncNow;
+
+  useEffect(() => {
+    if (!collabDoc || !doc || !roomKey) return;
+    if (connectionState === 'connected') {
+      void syncNowRef.current?.().catch(() => undefined);
+    } else if (connectionState === 'reconnecting' || connectionState === 'connecting') {
+      setSyncStatus('reconnecting');
+    } else {
+      void collaborationOutbox.list(roomCode, doc.id).then((pending) => {
+        setSyncStatus(pending.length ? 'unsaved' : 'offline');
+      }).catch((error) => {
+        setSyncStatus('failed');
+        setSyncError(error?.message || 'Offline sync storage could not be read.');
+      });
+    }
+  }, [collabDoc, connectionState, doc?.id, roomCode, roomKey]);
+
+  // Save now means persist the Yjs state and reconcile it with server history.
   const handleSave = async () => {
     if (!doc || !roomKey || saveStatus === 'saving') return;
     updateSaveStatus('saving');
-
-    if (autoSaveTimerRef.current) {
-      window.clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
     try {
-      const currentContent = doc.doc_type === 'code' ? plaintext : (editor ? editor.getHTML() : plaintext);
-      const envelope = await encryptEnvelope(currentContent, roomKey);
-      const envelopeStr = JSON.stringify(envelope);
-
-      await onSaveDocument(doc.id, envelopeStr);
+      await handleSyncNow();
       updateSaveStatus('saved');
     } catch {
       updateSaveStatus('unsaved');
@@ -351,25 +572,39 @@ export const EditorView: React.FC<EditorViewProps> = ({
         </div>
 
         <div className="flex items-center space-x-2">
-          {/* Real Save & Encryption Status */}
-          <div className="flex items-center space-x-1.5 px-2 py-1 rounded bg-[#121522] border border-[#212638] text-[11px] font-mono">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                saveStatus === 'saved'
-                  ? 'bg-emerald-400'
-                  : saveStatus === 'saving'
-                  ? 'bg-amber-400 animate-spin'
-                  : 'bg-amber-500'
-              }`}
-            />
-            <span className="text-slate-300">
-              {saveStatus === 'saved'
-                ? 'Encrypted & Synced'
-                : saveStatus === 'saving'
-                ? 'Encrypting...'
-                : 'Unsaved Changes'}
+          <div className="flex items-center space-x-1.5 px-2 py-1 rounded bg-[#121522] border border-[#212638] text-[11px] font-mono" title={syncError || undefined} aria-live="polite">
+            <span className={`w-2 h-2 rounded-full ${
+              syncStatus === 'synced' ? 'bg-emerald-400' :
+              syncStatus === 'syncing' || syncStatus === 'reconnecting' ? 'bg-amber-400 animate-pulse' :
+              syncStatus === 'failed' ? 'bg-red-400' : 'bg-amber-500'
+            }`} />
+            <span className={syncStatus === 'failed' ? 'text-red-300' : 'text-slate-300'}>
+              {syncStatus === 'synced' ? 'Synced' :
+                syncStatus === 'syncing' ? 'Syncing…' :
+                  syncStatus === 'reconnecting' ? 'Reconnecting…' :
+                    syncStatus === 'offline' ? 'Offline' :
+                      syncStatus === 'failed' ? 'Sync failed — Retry' : 'Unsaved changes'}
             </span>
+            {lastSyncedAt && syncStatus === 'synced' && (
+              <span className="hidden xl:inline text-slate-500">{new Date(lastSyncedAt).toLocaleTimeString()}</span>
+            )}
           </div>
+          {syncStatus === 'failed' && syncError && (
+            <span className="hidden lg:inline max-w-56 truncate text-[10px] text-red-300" role="alert" title={syncError}>
+              {syncError}
+            </span>
+          )}
+
+          <button
+            onClick={() => { void handleSyncNow().catch(() => undefined); }}
+            disabled={!collabDoc || syncStatus === 'syncing'}
+            title={syncError || 'Save local edits and merge the latest persisted room state'}
+            aria-label="Sync Now"
+            className="px-2.5 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] disabled:opacity-50 text-xs font-mono text-slate-200 transition-colors flex items-center space-x-1"
+          >
+            <RefreshCw className={`w-3 h-3 text-cyan-400 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+            <span>Sync Now</span>
+          </button>
 
           {/* Auto-Masking Toggle */}
           <button
@@ -479,9 +714,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
           /* Code Editing Area */
           <div className="h-full flex flex-col">
             <textarea
+              ref={codeTextareaRef}
               value={autoMask ? maskSensitiveNumbers(plaintext) : plaintext}
               onChange={(e) => handleContentChange(e.target.value)}
-              disabled={isLocked || currentUserRole === 'viewer'}
+              disabled={isLocked || isDecrypting || !collabDoc || currentUserRole === 'viewer'}
               className="flex-1 w-full bg-[#0a0c13] font-mono text-sm leading-relaxed text-cyan-300 p-4 rounded-lg border border-[#1f2438] focus:outline-none focus:border-cyan-500/50 resize-none"
               spellCheck={false}
             />

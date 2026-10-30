@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 import uuid
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.main import app
 from app.collaboration.manager import manager
 from app.database.session import init_db
@@ -191,11 +191,15 @@ def test_websocket_endpoint_e2e_two_clients():
             room = await RoomService.create_room(db, alice, name="Test Collaboration Room")
             doc = Document(room_id=room.id, title="Shared WebSocket Document")
             db.add(doc)
+            foreign_room = await RoomService.create_room(db, bob, name="Foreign Collaboration Room")
+            foreign_doc = Document(room_id=foreign_room.id, title="Private Foreign Document")
+            db.add(foreign_doc)
             await db.commit()
             await db.refresh(doc)
-            return alice, bob, room, doc
+            await db.refresh(foreign_doc)
+            return alice, bob, room, doc, foreign_doc
 
-    alice, bob, room, doc = asyncio.run(create_users_and_room())
+    alice, bob, room, doc, foreign_doc = asyncio.run(create_users_and_room())
     update_id = str(uuid.uuid4())
 
     token_alice = create_access_token({"sub": alice.id, "username": alice.username, "role": alice.role})
@@ -229,6 +233,17 @@ def test_websocket_endpoint_e2e_two_clients():
             assert rejected["type"] == "ERROR"
             assert "document" in rejected["message"].lower()
 
+            foreign_update_id = str(uuid.uuid4())
+            ws_alice.send_json({
+                "type": "YJS_UPDATE",
+                "document_id": foreign_doc.id,
+                "update_id": foreign_update_id,
+                "encrypted_payload": "foreign-room-update",
+            })
+            rejected_foreign = ws_alice.receive_json()
+            assert rejected_foreign["type"] == "ERROR"
+            assert rejected_foreign["update_id"] == foreign_update_id
+
             # Alice sends YJS_UPDATE
             ws_alice.send_json({
                 "type": "YJS_UPDATE",
@@ -243,6 +258,27 @@ def test_websocket_endpoint_e2e_two_clients():
             assert update_msg["document_id"] == doc.id
             assert update_msg["encrypted_payload"] == "E2EE_PAYLOAD_TEST"
 
+            # The sender is told only after the update and document timestamp
+            # commit, so the client never infers persistence from send().
+            persisted_ack = ws_alice.receive_json()
+            assert persisted_ack["type"] == "YJS_UPDATE_ACK"
+            assert persisted_ack["document_id"] == doc.id
+            assert persisted_ack["update_id"] == update_id
+            assert persisted_ack["persisted_at"].endswith("Z")
+
+            # A retry after a lost ack receives a fresh ack without creating a
+            # second database row for the same CRDT update id.
+            ws_alice.send_json({
+                "type": "YJS_UPDATE",
+                "document_id": doc.id,
+                "update_id": update_id,
+                "encrypted_payload": "E2EE_PAYLOAD_TEST",
+            })
+            retry_ack = ws_alice.receive_json()
+            assert retry_ack["type"] == "YJS_UPDATE_ACK"
+            assert retry_ack["update_id"] == update_id
+            assert ws_bob.receive_json()["type"] == "YJS_UPDATE"
+
             # Ping Pong check
             ws_bob.send_json({"type": "PING"})
             pong_msg = ws_bob.receive_json()
@@ -253,11 +289,96 @@ def test_websocket_endpoint_e2e_two_clients():
     async def read_persisted_update():
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(DocumentUpdate).where(DocumentUpdate.id == update_id))
-            return result.scalar_one_or_none()
+            count = await db.execute(select(func.count(DocumentUpdate.id)).where(DocumentUpdate.id == update_id))
+            persisted_doc = await db.execute(select(Document).where(Document.id == doc.id))
+            return result.scalar_one_or_none(), count.scalar_one(), persisted_doc.scalar_one()
 
-    persisted_update = asyncio.run(read_persisted_update())
+    persisted_update, persisted_count, persisted_doc = asyncio.run(read_persisted_update())
     assert persisted_update is not None
+    assert persisted_count == 1
     assert persisted_update.room_id == room.id
     assert persisted_update.document_id == doc.id
     assert persisted_update.encrypted_payload == "E2EE_PAYLOAD_TEST"
+    assert retry_ack["persisted_at"] == persisted_doc.updated_at.isoformat() + "Z"
+
+
+def test_authenticated_websocket_sync_runs_in_two_rooms_simultaneously():
+    """Two authenticated peers in each room persist and relay only their room's updates."""
+    import asyncio
+
+    async def create_rooms_and_users():
+        async with AsyncSessionLocal() as db:
+            alice = User(username=f"alice_{uuid.uuid4().hex[:6]}", password_hash=hash_password("pass123"), role="user")
+            bob = User(username=f"bob_{uuid.uuid4().hex[:6]}", password_hash=hash_password("pass123"), role="user")
+            carol = User(username=f"carol_{uuid.uuid4().hex[:6]}", password_hash=hash_password("pass123"), role="user")
+            dave = User(username=f"dave_{uuid.uuid4().hex[:6]}", password_hash=hash_password("pass123"), role="user")
+            db.add_all([alice, bob, carol, dave])
+            await db.commit()
+            for user in (alice, bob, carol, dave):
+                await db.refresh(user)
+
+            room_a = await RoomService.create_room(db, alice, name="Concurrent Room A")
+            room_b = await RoomService.create_room(db, carol, name="Concurrent Room B")
+            doc_a = Document(room_id=room_a.id, title="Room A document")
+            doc_b = Document(room_id=room_b.id, title="Room B document")
+            db.add_all([doc_a, doc_b])
+            await db.commit()
+            await db.refresh(doc_a)
+            await db.refresh(doc_b)
+            return (alice, bob, room_a, doc_a), (carol, dave, room_b, doc_b)
+
+    room_a_data, room_b_data = asyncio.run(create_rooms_and_users())
+    alice, bob, room_a, doc_a = room_a_data
+    carol, dave, room_b, doc_b = room_b_data
+    tokens = [
+        create_access_token({"sub": user.id, "username": user.username, "role": user.role})
+        for user in (alice, bob, carol, dave)
+    ]
+    client = TestClient(app)
+
+    with client.websocket_connect(f"/ws/{room_a.code}?token={tokens[0]}") as alice_ws:
+        assert alice_ws.receive_json()["type"] == "ROOM_CONNECTED"
+        with client.websocket_connect(f"/ws/{room_a.code}?token={tokens[1]}") as bob_ws:
+            assert bob_ws.receive_json()["type"] == "ROOM_CONNECTED"
+            assert alice_ws.receive_json()["type"] == "USER_JOINED"
+            with client.websocket_connect(f"/ws/{room_b.code}?token={tokens[2]}") as carol_ws:
+                assert carol_ws.receive_json()["type"] == "ROOM_CONNECTED"
+                with client.websocket_connect(f"/ws/{room_b.code}?token={tokens[3]}") as dave_ws:
+                    assert dave_ws.receive_json()["type"] == "ROOM_CONNECTED"
+                    assert carol_ws.receive_json()["type"] == "USER_JOINED"
+
+                    update_a_id = str(uuid.uuid4())
+                    alice_ws.send_json({
+                        "type": "YJS_UPDATE", "document_id": doc_a.id,
+                        "update_id": update_a_id, "encrypted_payload": "opaque-room-a-state",
+                    })
+                    ack_a = alice_ws.receive_json()
+                    relay_a = bob_ws.receive_json()
+                    assert ack_a["type"] == "YJS_UPDATE_ACK" and ack_a["update_id"] == update_a_id
+                    assert relay_a["document_id"] == doc_a.id
+                    assert relay_a["encrypted_payload"] == "opaque-room-a-state"
+
+                    update_b_id = str(uuid.uuid4())
+                    carol_ws.send_json({
+                        "type": "YJS_UPDATE", "document_id": doc_b.id,
+                        "update_id": update_b_id, "encrypted_payload": "opaque-room-b-state",
+                    })
+                    ack_b = carol_ws.receive_json()
+                    relay_b = dave_ws.receive_json()
+                    assert ack_b["type"] == "YJS_UPDATE_ACK" and ack_b["update_id"] == update_b_id
+                    assert relay_b["document_id"] == doc_b.id
+                    assert relay_b["encrypted_payload"] == "opaque-room-b-state"
+
+    async def read_room_updates():
+        async with AsyncSessionLocal() as db:
+            updates = (await db.execute(
+                select(DocumentUpdate).where(DocumentUpdate.id.in_([update_a_id, update_b_id]))
+            )).scalars().all()
+            return {item.id: (item.room_id, item.document_id) for item in updates}
+
+    persisted = asyncio.run(read_room_updates())
+    assert persisted == {
+        update_a_id: (room_a.id, doc_a.id),
+        update_b_id: (room_b.id, doc_b.id),
+    }
 

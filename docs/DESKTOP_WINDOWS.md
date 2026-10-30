@@ -28,6 +28,12 @@ The desktop client stores the JWT session token and room passphrases in Windows 
 
 The React app performs client-side encryption and UI rendering inside WebView2. PDF previews render locally from an authenticated file blob. DOCX preview currently uses extracted text supplied with the room source; it does not add an offline DOCX parser. No persistent plaintext document cache is created by the desktop shell.
 
+## Collaboration and manual sync
+
+The editor uses a separate Yjs document per room document. WebSocket updates remain client-encrypted, and the server acknowledges an update only after its database transaction commits. **Sync Now** sends any pending Yjs changes, waits for that acknowledgement, fetches the latest encrypted update history, and merges missing Yjs structs into the open editor using a state-vector diff. It does not replace the editor contents with a snapshot.
+
+When the network is unavailable, encrypted Yjs updates and an encrypted local Yjs state cache are stored in the browser/WebView IndexedDB for that room and document. They are retried when the WebSocket reconnects or when **Sync Now** is pressed. The status stays at **Unsaved changes**, **Offline**, **Reconnecting…**, or **Sync failed — Retry** until server persistence is confirmed. Plaintext and room keys are not written to this cache.
+
 ## Release validation checklist
 
 Do not release until all of these pass against the deployed backend without changing the Render service or database:

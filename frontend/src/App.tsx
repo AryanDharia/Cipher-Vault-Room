@@ -567,37 +567,16 @@ export function App() {
     }
   };
 
-  const handleSaveDocument = async (docId: string, encryptedEnvelope: string) => {
-    if (!roomCode) return;
-    setDocuments((prev) =>
-      prev.map((d) =>
-        d.id === docId
-          ? {
-              ...d,
-              encrypted_envelope: encryptedEnvelope,
-              has_content: true,
-              version: (d.version || 1) + 1,
-            }
-          : d
-      )
-    );
-    const res = await api.updateDocument(roomCode, docId, { encrypted_envelope: encryptedEnvelope });
-    if (res && res.version) {
-      setDocuments((prev) =>
-        prev.map((d) => (d.id === docId ? { ...d, version: res.version } : d))
-      );
-    }
-  };
-
   const handleBroadcastDelta = useCallback((docId: string, updateId: string, encryptedPayload: string) => {
     if (wsRef.current && wsRoomCodeRef.current === roomCode) {
-      wsRef.current.send({
+      return wsRef.current.sendAndWaitForPersistence({
         type: 'YJS_UPDATE',
         document_id: docId,
         update_id: updateId,
         encrypted_payload: encryptedPayload,
       });
     }
+    return Promise.reject(new Error('The room WebSocket is not connected; the encrypted update is retained for retry'));
   }, [roomCode]);
 
   const handleAddTextSource = async (title: string, content: string, sourceType: string) => {
@@ -876,7 +855,6 @@ export function App() {
               roomKey={roomKey}
               isLocked={isLocked}
               currentUserRole={currentUserRole}
-              onSaveDocument={handleSaveDocument}
               onBroadcastDelta={handleBroadcastDelta}
               onSaveStatusChange={(status) => setHasUnsavedChanges(status === 'unsaved')}
               latestDelta={latestDelta}

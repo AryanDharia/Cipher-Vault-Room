@@ -31,6 +31,11 @@ export class VaultWebSocket {
   private lastActivity = Date.now();
   private watchdogInterval: number | null = null;
   private messageQueue: any[] = [];
+  private pendingUpdateAcks = new Map<string, {
+    resolve: (persistedAt: string | null) => void;
+    reject: (error: Error) => void;
+    timeout: number;
+  }>();
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
   private stateListeners: Set<(state: ConnectionState) => void> = new Set();
   private isExplicitlyClosed = false;
@@ -42,7 +47,7 @@ export class VaultWebSocket {
 
   public getWsUrl(): string {
     // 1. Check if VITE_WS_URL environment variable is provided
-    const envWs = import.meta.env.VITE_WS_URL;
+    const envWs = import.meta.env?.VITE_WS_URL;
     if (envWs) {
       const base = envWs.endsWith('/') ? envWs.slice(0, -1) : envWs;
       return `${base}/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
@@ -99,6 +104,21 @@ export class VaultWebSocket {
           if (msg.type === 'ROOM_DELETED' || msg.type === 'KICKED_FROM_ROOM') {
             this.isExplicitlyClosed = true;
             this.stopHeartbeat();
+          }
+          if (msg.type === 'YJS_UPDATE_ACK' && msg.update_id) {
+            const pending = this.pendingUpdateAcks.get(msg.update_id);
+            if (pending) {
+              clearTimeout(pending.timeout);
+              this.pendingUpdateAcks.delete(msg.update_id);
+              pending.resolve(msg.persisted_at ?? null);
+            }
+          } else if (msg.type === 'ERROR' && msg.update_id) {
+            const pending = this.pendingUpdateAcks.get(msg.update_id);
+            if (pending) {
+              clearTimeout(pending.timeout);
+              this.pendingUpdateAcks.delete(msg.update_id);
+              pending.reject(new Error(msg.message || 'The server rejected this document update'));
+            }
           }
           this.emit(msg.type, msg);
         } catch {
@@ -201,9 +221,6 @@ export class VaultWebSocket {
       }
     } else {
       // Buffer outgoing messages during temporary reconnects
-      if (this.messageQueue.length > 50) {
-        this.messageQueue.shift(); // Evict oldest
-      }
       this.messageQueue.push(data);
       console.log(`[VaultWebSocket] Buffered message (type: ${data.type}) while disconnected. Queue depth: ${this.messageQueue.length}`);
     }
@@ -215,14 +232,44 @@ export class VaultWebSocket {
     }
     console.log(`[VaultWebSocket] Flushing ${this.messageQueue.length} queued messages to server...`);
     while (this.messageQueue.length > 0) {
-      const msg = this.messageQueue.shift();
+      const msg = this.messageQueue[0];
       try {
         this.ws.send(JSON.stringify(msg));
+        this.messageQueue.shift();
       } catch (err) {
         console.error('[VaultWebSocket] Error while flushing queue:', err);
         break;
       }
     }
+  }
+
+  public sendAndWaitForPersistence(data: {
+    type: 'YJS_UPDATE';
+    document_id: string;
+    update_id: string;
+    encrypted_payload: string;
+  }, timeoutMs = 20000): Promise<string | null> {
+    if (this.isExplicitlyClosed) return Promise.reject(new Error('This room connection is closed'));
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('WebSocket is offline; the encrypted update remains on this device'));
+    }
+    if (this.pendingUpdateAcks.has(data.update_id)) {
+      return Promise.reject(new Error('This update is already waiting for server confirmation'));
+    }
+    return new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        this.pendingUpdateAcks.delete(data.update_id);
+        reject(new Error('The server did not confirm persistence in time; the encrypted update was kept for retry'));
+      }, timeoutMs);
+      this.pendingUpdateAcks.set(data.update_id, { resolve, reject, timeout });
+      try {
+        this.ws!.send(JSON.stringify(data));
+      } catch {
+        clearTimeout(timeout);
+        this.pendingUpdateAcks.delete(data.update_id);
+        reject(new Error('Could not send the update; the encrypted update remains on this device'));
+      }
+    });
   }
 
   public on(type: string, handler: (data: any) => void) {

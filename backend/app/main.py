@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, update as sql_update
 from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
@@ -237,19 +237,20 @@ async def websocket_endpoint(
                     if not doc_access:
                         await websocket.send_json({
                             "type": "ERROR",
-                            "message": "Document does not belong to this room"
+                            "message": "Document does not belong to this room",
+                            "update_id": update_id,
                         })
                         continue
                     if doc_access.is_locked or doc_access.role == "viewer":
-                        await websocket.send_json({"type": "ERROR", "message": "Editing is not permitted"})
+                        await websocket.send_json({"type": "ERROR", "message": "Editing is not permitted", "update_id": update_id})
                         continue
                     try:
                         uuid.UUID(str(update_id))
                     except (ValueError, TypeError, AttributeError):
-                        await websocket.send_json({"type": "ERROR", "message": "Invalid collaboration update ID"})
+                        await websocket.send_json({"type": "ERROR", "message": "Invalid collaboration update ID", "update_id": update_id})
                         continue
                     if not isinstance(encrypted_payload, str) or len(encrypted_payload.encode("utf-8")) > 4_000_000:
-                        await websocket.send_json({"type": "ERROR", "message": "Collaboration update is invalid or too large"})
+                        await websocket.send_json({"type": "ERROR", "message": "Collaboration update is invalid or too large", "update_id": update_id})
                         continue
                     # The server persists only opaque, client-encrypted Yjs updates.
                     # A UUID makes websocket retries idempotent across reconnects.
@@ -259,7 +260,13 @@ async def websocket_endpoint(
                         document_id=document_id,
                         encrypted_payload=encrypted_payload,
                     ))
+                    persisted_at = utcnow()
                     try:
+                        await db.execute(
+                            sql_update(Document)
+                            .where(Document.id == document_id, Document.room_id == room_id)
+                            .values(updated_at=persisted_at)
+                        )
                         await db.commit()
                     except IntegrityError:
                         await db.rollback()
@@ -272,8 +279,23 @@ async def websocket_endpoint(
                         )
                         existing_payload = existing.scalar_one_or_none()
                         if existing_payload != encrypted_payload:
-                            await websocket.send_json({"type": "ERROR", "message": "Could not persist collaboration update"})
+                            await websocket.send_json({"type": "ERROR", "message": "Could not persist collaboration update", "update_id": update_id})
                             continue
+                        # A matching duplicate means an earlier attempt committed
+                        # but its acknowledgement may have been lost. Refresh the
+                        # document timestamp and acknowledge the idempotent retry.
+                        await db.execute(
+                            sql_update(Document)
+                            .where(Document.id == document_id, Document.room_id == room_id)
+                            .values(updated_at=persisted_at)
+                        )
+                        await db.commit()
+                    await websocket.send_json({
+                        "type": "YJS_UPDATE_ACK",
+                        "document_id": document_id,
+                        "update_id": update_id,
+                        "persisted_at": persisted_at.isoformat() + "Z",
+                    })
             await manager.handle_message(code, socket_id, data)
     except WebSocketDisconnect:
         logger.info(f"[WS DISCONNECT] Socket {socket_id} disconnected from room '{code}'")

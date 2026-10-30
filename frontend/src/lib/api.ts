@@ -195,7 +195,7 @@ class ApiClient {
   }
 
   async listCollaborationUpdates(code: string, docId: string) {
-    return this.request<{ initialized: boolean; updates: Array<{ update_id: string; encrypted_payload: string }> }>(
+    return this.request<{ initialized: boolean; updated_at?: string | null; updates: Array<{ update_id: string; encrypted_payload: string }> }>(
       `/rooms/${code}/documents/${docId}/collaboration-updates`
     );
   }

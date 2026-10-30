@@ -1,4 +1,5 @@
 import secrets
+from datetime import timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -12,6 +13,13 @@ from app.auth.dependencies import get_current_user, get_room_and_membership
 from app.collaboration.manager import manager
 
 router = APIRouter(prefix="/rooms/{code}/documents", tags=["Documents"])
+
+def _utc_isoformat(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.isoformat() + "Z"
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 class CreateDocumentRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
@@ -183,6 +191,7 @@ async def list_collaboration_updates(
         raise HTTPException(status_code=413, detail="Collaboration history is too large to restore safely")
     return {
         "initialized": bool(doc.collaboration_initialized),
+        "updated_at": _utc_isoformat(doc.updated_at),
         "updates": [{"update_id": item.id, "encrypted_payload": item.encrypted_payload} for item in updates],
     }
 
@@ -207,7 +216,7 @@ async def initialize_collaboration(
     claim = await db.execute(
         sql_update(Document)
         .where(Document.id == doc.id, Document.room_id == room.id, Document.collaboration_initialized == False)
-        .values(collaboration_initialized=True)
+        .values(collaboration_initialized=True, updated_at=utcnow())
     )
     if claim.rowcount != 1:
         await db.rollback()
