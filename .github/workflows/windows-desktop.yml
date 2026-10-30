@@ -1,0 +1,89 @@
+name: Windows desktop MSI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/windows-desktop.yml'
+      - 'requirements.txt'
+      - 'build.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  collaboration-tests:
+    name: Room isolation and persistence checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pip install pytest pytest-asyncio httpx
+      - name: Test collaboration room isolation and persistence
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./ci-vaultroom.db
+          ENVIRONMENT: test
+          JWT_SECRET_KEY: ci-only-not-for-production
+        run: python -m pytest tests/test_collaboration.py tests/test_document_sync_and_persistence.py -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Test concurrent Yjs edits and room isolation
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run test:collaboration
+          npm run build
+
+  build-msi:
+    name: Build Windows MSI
+    needs: collaboration-tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri -> target
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build MSI
+        working-directory: frontend
+        run: npm run desktop:build
+      - name: Verify installer exists
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem -Path 'frontend/src-tauri/target/release/bundle/msi/*.msi'
+          if (-not $installers) { throw 'Tauri did not produce an MSI installer.' }
+          $installers | ForEach-Object { Write-Host "Built $($_.FullName) ($($_.Length) bytes)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vaultroom-windows-msi-preview
+          path: frontend/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+          retention-days: 14

@@ -37,13 +37,15 @@ async def init_db():
         migration_statements = [
             "ALTER TABLE rooms ADD COLUMN max_members INTEGER DEFAULT 20",
             "ALTER TABLE room_members ADD COLUMN is_kicked BOOLEAN DEFAULT 0",
-            "ALTER TABLE source_items ADD COLUMN file_data BLOB"
+            "ALTER TABLE source_items ADD COLUMN file_data BLOB",
+            "ALTER TABLE documents ADD COLUMN collaboration_initialized BOOLEAN DEFAULT 0 NOT NULL"
         ]
         if "postgresql" in settings.normalized_database_url or "postgres" in settings.normalized_database_url:
             migration_statements = [
                 "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS max_members INTEGER DEFAULT 20",
                 "ALTER TABLE room_members ADD COLUMN IF NOT EXISTS is_kicked BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE source_items ADD COLUMN IF NOT EXISTS file_data BYTEA"
+                "ALTER TABLE source_items ADD COLUMN IF NOT EXISTS file_data BYTEA",
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS collaboration_initialized BOOLEAN DEFAULT FALSE NOT NULL"
             ]
         for stmt in migration_statements:
             try:

@@ -244,6 +244,7 @@ class RoomConnectionManager:
                     "type": msg_type,
                     "sender_socket_id": socket_id,
                     "document_id": data.get("document_id"),
+                    "update_id": data.get("update_id"),
                     "encrypted_payload": data.get("encrypted_payload"),
                     "iv": data.get("iv"),
                     "auth_tag": data.get("auth_tag"),

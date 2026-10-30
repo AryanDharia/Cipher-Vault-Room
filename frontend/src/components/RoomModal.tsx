@@ -6,7 +6,7 @@ import { deriveRoomKey } from '../lib/crypto';
 interface RoomModalProps {
   isOpen: boolean;
   user?: { id: string; username: string; role: string } | null;
-  onRoomJoined: (roomData: any, roomKey: CryptoKey, passphrase?: string) => void;
+  onRoomJoined: (roomData: any, roomKey: CryptoKey, passphrase?: string) => void | Promise<void>;
   onLogout?: () => void;
   onOpenDeleteAccount?: () => void;
 }
@@ -101,7 +101,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
         // Derive client-side zero-knowledge AES-256-GCM key
         const { key } = await deriveRoomKey(passphrase.trim(), activeCode);
 
-        onRoomJoined(
+        await onRoomJoined(
           {
             room: res.room || res,
             current_user_role: res.current_user_role || 'owner',
@@ -120,7 +120,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
         const res = await api.joinRoom({ code: cleanCode, role: 'editor' });
         const { key } = await deriveRoomKey(passphrase.trim(), cleanCode);
 
-        onRoomJoined(res, key, passphrase.trim());
+        await onRoomJoined(res, key, passphrase.trim());
       }
     } catch (err: any) {
       setError(err.message || 'Failed to process room action');

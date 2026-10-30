@@ -3,17 +3,32 @@
  */
 
 // Support explicit environment variable VITE_API_URL or default to relative /api
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { secureStorage } from './secureStorage';
+
+const API_BASE = import.meta.env.VITE_API_URL ||
+  (isTauri() ? 'https://cipher-vault-room.onrender.com/api' : '/api');
 
 class ApiClient {
   private token: string | null = null;
 
   constructor() {
-    this.token = localStorage.getItem('vaultroom_token') || sessionStorage.getItem('vaultroom_token');
+    this.token = isTauri() ? null : (localStorage.getItem('vaultroom_token') || sessionStorage.getItem('vaultroom_token'));
   }
 
-  setToken(token: string | null) {
+  async initialize() {
+    if (isTauri()) {
+      this.token = await secureStorage.get('session-token');
+    }
+  }
+
+  async setToken(token: string | null) {
     this.token = token;
+    if (isTauri()) {
+      if (token) await secureStorage.set('session-token', token);
+      else await secureStorage.delete('session-token');
+      return;
+    }
     if (token) {
       localStorage.setItem('vaultroom_token', token);
       sessionStorage.setItem('vaultroom_token', token);
@@ -25,7 +40,7 @@ class ApiClient {
 
   getToken(): string | null {
     if (!this.token) {
-      this.token = localStorage.getItem('vaultroom_token') || sessionStorage.getItem('vaultroom_token');
+      if (!isTauri()) this.token = localStorage.getItem('vaultroom_token') || sessionStorage.getItem('vaultroom_token');
     }
     return this.token;
   }
@@ -74,7 +89,7 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    this.setToken(res.access_token);
+    await this.setToken(res.access_token);
     return res;
   }
 
@@ -83,7 +98,7 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
-    this.setToken(res.access_token);
+    await this.setToken(res.access_token);
     return res;
   }
 
@@ -177,6 +192,19 @@ class ApiClient {
 
   async getDocument(code: string, docId: string) {
     return this.request<any>(`/rooms/${code}/documents/${docId}`);
+  }
+
+  async listCollaborationUpdates(code: string, docId: string) {
+    return this.request<{ initialized: boolean; updates: Array<{ update_id: string; encrypted_payload: string }> }>(
+      `/rooms/${code}/documents/${docId}/collaboration-updates`
+    );
+  }
+
+  async initializeCollaboration(code: string, docId: string, updateId: string, encryptedPayload: string) {
+    return this.request<{ initialized: boolean }>(`/rooms/${code}/documents/${docId}/collaboration-initialize`, {
+      method: 'POST',
+      body: JSON.stringify({ update_id: updateId, encrypted_payload: encryptedPayload }),
+    });
   }
 
   async updateDocument(code: string, docId: string, data: { title?: string; language?: string; encrypted_envelope?: string; is_protected?: boolean }) {

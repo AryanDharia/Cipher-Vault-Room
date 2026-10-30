@@ -7,11 +7,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
+from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.database.session import init_db, AsyncSessionLocal
-from app.database.models import Room, RoomMember, User, utcnow
+from app.database.models import Room, RoomMember, User, Document, DocumentUpdate, utcnow
 from app.auth.security import decode_access_token
 from app.rooms.service import normalize_room_code
 from app.collaboration.manager import manager
@@ -197,6 +198,7 @@ async def websocket_endpoint(
             await db.commit()
 
         role = member.role
+        room_id = room.id
 
     socket_id = str(uuid.uuid4())[:8]
 
@@ -213,6 +215,65 @@ async def websocket_endpoint(
     try:
         while True:
             data = await websocket.receive_json()
+            # A room socket may only relay updates for documents owned by that room.
+            # Document UUIDs are globally unique, but checking the room relationship
+            # here prevents stale or forged document IDs from entering a session.
+            if data.get("type") in ("YJS_UPDATE", "DOC_SYNC_STEP", "ENCRYPTED_DELTA"):
+                document_id = data.get("document_id")
+                update_id = data.get("update_id")
+                encrypted_payload = data.get("encrypted_payload")
+                async with AsyncSessionLocal() as db:
+                    doc_res = await db.execute(
+                        select(Document.id, Room.is_locked, RoomMember.role)
+                        .join(Room, Document.room_id == Room.id)
+                        .join(RoomMember, and_(RoomMember.room_id == Room.id, RoomMember.user_id == user_id))
+                        .where(
+                            func.upper(Room.code) == code,
+                            Document.id == document_id,
+                            RoomMember.is_kicked == False,
+                        )
+                    )
+                    doc_access = doc_res.one_or_none()
+                    if not doc_access:
+                        await websocket.send_json({
+                            "type": "ERROR",
+                            "message": "Document does not belong to this room"
+                        })
+                        continue
+                    if doc_access.is_locked or doc_access.role == "viewer":
+                        await websocket.send_json({"type": "ERROR", "message": "Editing is not permitted"})
+                        continue
+                    try:
+                        uuid.UUID(str(update_id))
+                    except (ValueError, TypeError, AttributeError):
+                        await websocket.send_json({"type": "ERROR", "message": "Invalid collaboration update ID"})
+                        continue
+                    if not isinstance(encrypted_payload, str) or len(encrypted_payload.encode("utf-8")) > 4_000_000:
+                        await websocket.send_json({"type": "ERROR", "message": "Collaboration update is invalid or too large"})
+                        continue
+                    # The server persists only opaque, client-encrypted Yjs updates.
+                    # A UUID makes websocket retries idempotent across reconnects.
+                    db.add(DocumentUpdate(
+                        id=update_id,
+                        room_id=room_id,
+                        document_id=document_id,
+                        encrypted_payload=encrypted_payload,
+                    ))
+                    try:
+                        await db.commit()
+                    except IntegrityError:
+                        await db.rollback()
+                        existing = await db.execute(
+                            select(DocumentUpdate.encrypted_payload).where(
+                                DocumentUpdate.id == update_id,
+                                DocumentUpdate.room_id == room_id,
+                                DocumentUpdate.document_id == document_id,
+                            )
+                        )
+                        existing_payload = existing.scalar_one_or_none()
+                        if existing_payload != encrypted_payload:
+                            await websocket.send_json({"type": "ERROR", "message": "Could not persist collaboration update"})
+                            continue
             await manager.handle_message(code, socket_id, data)
     except WebSocketDisconnect:
         logger.info(f"[WS DISCONNECT] Socket {socket_id} disconnected from room '{code}'")

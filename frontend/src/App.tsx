@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { RightSidebar } from './components/RightSidebar';
@@ -12,6 +12,7 @@ import { DocumentPreviewModal } from './components/DocumentPreviewModal';
 import { api } from './lib/api';
 import { VaultWebSocket, ConnectionState, RoomUser } from './lib/websocket';
 import { encryptEnvelope, decryptEnvelope, deriveRoomKey } from './lib/crypto';
+import { secureStorage } from './lib/secureStorage';
 
 export function App() {
   // Authentication & User State
@@ -57,24 +58,24 @@ export function App() {
   const [activeRightTab, setActiveRightTab] = useState<string>('approvals');
 
   const wsRef = useRef<VaultWebSocket | null>(null);
+  const wsRoomCodeRef = useRef<string | null>(null);
 
   // Restore active room from saved session
   const restoreActiveRoom = async () => {
     const savedCode = localStorage.getItem('vaultroom_active_room_code');
     if (!savedCode) return;
 
-    const savedPass = sessionStorage.getItem(`vaultroom_pass_${savedCode}`) || localStorage.getItem(`vaultroom_pass_${savedCode}`);
+    const savedPass = await secureStorage.get(`room-pass-${savedCode}`);
     if (!savedPass) return;
 
     try {
       const roomData = await api.getRoom(savedCode);
       const { key } = await deriveRoomKey(savedPass, savedCode);
-      handleRoomJoined(roomData, key, savedPass);
+      await handleRoomJoined(roomData, key, savedPass);
     } catch (err: any) {
       if (err.status === 404 || err.status === 403 || (err.message && (err.message.includes('404') || err.message.includes('403')))) {
         localStorage.removeItem('vaultroom_active_room_code');
-        localStorage.removeItem(`vaultroom_pass_${savedCode}`);
-        sessionStorage.removeItem(`vaultroom_pass_${savedCode}`);
+        void secureStorage.delete(`room-pass-${savedCode}`);
       }
     }
   };
@@ -112,6 +113,7 @@ export function App() {
     // Connect WebSocket
     const ws = new VaultWebSocket(roomCode, token);
     wsRef.current = ws;
+    wsRoomCodeRef.current = roomCode;
 
     ws.onStateChange((state) => {
       setConnectionState(state);
@@ -235,7 +237,7 @@ export function App() {
 
     const handleIncomingDelta = (data: any) => {
       setLatestDelta(data);
-      setRemoteDeltas((prev) => [...prev.slice(-10), data]);
+      setRemoteDeltas((prev) => [...prev.slice(-999), data]);
     };
 
     ws.on('YJS_UPDATE', handleIncomingDelta);
@@ -251,8 +253,7 @@ export function App() {
       console.warn('[App] KICKED_FROM_ROOM received:', data);
       if (roomCode) {
         localStorage.removeItem('vaultroom_active_room_code');
-        localStorage.removeItem(`vaultroom_pass_${roomCode}`);
-        sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+        void secureStorage.delete(`room-pass-${roomCode}`);
         localStorage.removeItem(`vaultroom_doc_${roomCode}`);
       }
       wsRef.current?.disconnect();
@@ -270,8 +271,7 @@ export function App() {
       if (user && data.user_id === user.id) {
         if (roomCode) {
           localStorage.removeItem('vaultroom_active_room_code');
-          localStorage.removeItem(`vaultroom_pass_${roomCode}`);
-          sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+          void secureStorage.delete(`room-pass-${roomCode}`);
           localStorage.removeItem(`vaultroom_doc_${roomCode}`);
         }
         wsRef.current?.disconnect();
@@ -317,8 +317,7 @@ export function App() {
       console.warn('[App] ROOM_DELETED received:', data);
       if (roomCode) {
         localStorage.removeItem('vaultroom_active_room_code');
-        localStorage.removeItem(`vaultroom_pass_${roomCode}`);
-        sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+        void secureStorage.delete(`room-pass-${roomCode}`);
         localStorage.removeItem(`vaultroom_doc_${roomCode}`);
       }
       wsRef.current?.disconnect();
@@ -395,6 +394,10 @@ export function App() {
 
     return () => {
       ws.disconnect();
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+        wsRoomCodeRef.current = null;
+      }
     };
   }, [roomCode, user]);
 
@@ -467,9 +470,24 @@ export function App() {
     } catch {}
   };
 
-  const handleRoomJoined = (roomData: any, key: CryptoKey, passphrase?: string) => {
+  const handleRoomJoined = async (roomData: any, key: CryptoKey, passphrase?: string) => {
     const r = roomData.room || roomData;
     const code = r.code;
+    if (code && code !== roomCode) {
+      // A room is a separate client session: do not let snapshots, presence,
+      // selection, or activity from the previous room bleed into the next one.
+      setDocuments([]);
+      setActiveDocId(localStorage.getItem(`vaultroom_doc_${code}`));
+      setSources([]);
+      setSecrets([]);
+      setApprovals([]);
+      setMembers([]);
+      setOnlineUsers([]);
+      setAuditEvents([]);
+      setRemoteDeltas([]);
+      setLatestDelta(null);
+      setHasUnsavedChanges(false);
+    }
     setRoomCode(code);
     setRoomName(r.name);
     setIsLocked(!!r.is_locked);
@@ -485,8 +503,7 @@ export function App() {
     if (code) {
       localStorage.setItem('vaultroom_active_room_code', code);
       if (passphrase) {
-        sessionStorage.setItem(`vaultroom_pass_${code}`, passphrase);
-        localStorage.setItem(`vaultroom_pass_${code}`, passphrase);
+        await secureStorage.set(`room-pass-${code}`, passphrase);
       }
     }
   };
@@ -572,15 +589,16 @@ export function App() {
     }
   };
 
-  const handleBroadcastDelta = (docId: string, encryptedPayload: string) => {
-    if (wsRef.current) {
+  const handleBroadcastDelta = useCallback((docId: string, updateId: string, encryptedPayload: string) => {
+    if (wsRef.current && wsRoomCodeRef.current === roomCode) {
       wsRef.current.send({
         type: 'YJS_UPDATE',
         document_id: docId,
+        update_id: updateId,
         encrypted_payload: encryptedPayload,
       });
     }
-  };
+  }, [roomCode]);
 
   const handleAddTextSource = async (title: string, content: string, sourceType: string) => {
     if (!roomCode) return;
@@ -716,8 +734,7 @@ export function App() {
   const handleConfirmSignOut = () => {
     if (roomCode) {
       localStorage.removeItem('vaultroom_active_room_code');
-      localStorage.removeItem(`vaultroom_pass_${roomCode}`);
-      sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+      void secureStorage.delete(`room-pass-${roomCode}`);
       localStorage.removeItem(`vaultroom_doc_${roomCode}`);
     }
     wsRef.current?.disconnect();
@@ -737,8 +754,7 @@ export function App() {
     const currentCode = roomCode;
     await api.deleteRoom(currentCode);
     localStorage.removeItem('vaultroom_active_room_code');
-    localStorage.removeItem(`vaultroom_pass_${currentCode}`);
-    sessionStorage.removeItem(`vaultroom_pass_${currentCode}`);
+    void secureStorage.delete(`room-pass-${currentCode}`);
     localStorage.removeItem(`vaultroom_doc_${currentCode}`);
     wsRef.current?.disconnect();
     setRoomCode(null);
@@ -755,8 +771,7 @@ export function App() {
     await api.deleteAccount(password);
     if (roomCode) {
       localStorage.removeItem('vaultroom_active_room_code');
-      localStorage.removeItem(`vaultroom_pass_${roomCode}`);
-      sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+      void secureStorage.delete(`room-pass-${roomCode}`);
       localStorage.removeItem(`vaultroom_doc_${roomCode}`);
     }
     wsRef.current?.disconnect();
@@ -805,8 +820,7 @@ export function App() {
         onLeaveRoom={() => {
           if (roomCode) {
             localStorage.removeItem('vaultroom_active_room_code');
-            localStorage.removeItem(`vaultroom_pass_${roomCode}`);
-            sessionStorage.removeItem(`vaultroom_pass_${roomCode}`);
+            void secureStorage.delete(`room-pass-${roomCode}`);
             localStorage.removeItem(`vaultroom_doc_${roomCode}`);
           }
           setRoomCode(null);
@@ -856,6 +870,7 @@ export function App() {
 
             {/* Central Editor Canvas */}
             <EditorView
+              key={`${roomCode}:${activeDocId || 'empty'}`}
               document={activeDoc}
               roomCode={roomCode}
               roomKey={roomKey}
@@ -866,6 +881,7 @@ export function App() {
               onSaveStatusChange={(status) => setHasUnsavedChanges(status === 'unsaved')}
               latestDelta={latestDelta}
               remoteDeltas={remoteDeltas}
+              connectionState={connectionState}
             />
 
             {/* Right Sidebar */}

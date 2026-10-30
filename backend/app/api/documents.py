@@ -3,10 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update, delete as sql_delete, func
+from sqlalchemy.exc import IntegrityError
 
 from app.database.session import get_db
-from app.database.models import User, Room, RoomMember, Document, AuditEvent, ExportRecord, utcnow
+from app.database.models import User, Room, RoomMember, Document, DocumentUpdate, AuditEvent, ExportRecord, utcnow
 from app.auth.dependencies import get_current_user, get_room_and_membership
 from app.collaboration.manager import manager
 
@@ -24,6 +25,13 @@ class UpdateDocumentRequest(BaseModel):
     language: Optional[str] = None
     encrypted_envelope: Optional[str] = None
     is_protected: Optional[bool] = None
+
+class CollaborationUpdateRequest(BaseModel):
+    update_id: str = Field(..., min_length=36, max_length=36)
+    encrypted_payload: str = Field(..., min_length=1, max_length=4_000_000)
+
+class CollaborationInitializeRequest(CollaborationUpdateRequest):
+    pass
 
 class ExportDocumentRequest(BaseModel):
     format: str = Field("markdown", pattern="^(markdown|txt|pdf)$")
@@ -143,6 +151,82 @@ async def get_document(
         "updated_at": doc.updated_at.isoformat()
     }
 
+@router.get("/{doc_id}/collaboration-updates")
+async def list_collaboration_updates(
+    code: str,
+    doc_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    room, _ = await get_room_and_membership(code, user, db)
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.room_id == room.id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    updates_result = await db.execute(
+        select(DocumentUpdate)
+        .where(DocumentUpdate.room_id == room.id, DocumentUpdate.document_id == doc.id)
+        .order_by(DocumentUpdate.is_initial.desc(), DocumentUpdate.created_at.asc(), DocumentUpdate.id.asc())
+        .limit(10000)
+    )
+    updates = updates_result.scalars().all()
+    # Never return a truncated CRDT log: applying only part of it could silently
+    # construct an incomplete document. Require repair/compaction instead.
+    count_result = await db.execute(
+        select(func.count(DocumentUpdate.id)).where(
+            DocumentUpdate.room_id == room.id, DocumentUpdate.document_id == doc.id
+        )
+    )
+    if (count_result.scalar() or 0) > len(updates):
+        raise HTTPException(status_code=413, detail="Collaboration history is too large to restore safely")
+    return {
+        "initialized": bool(doc.collaboration_initialized),
+        "updates": [{"update_id": item.id, "encrypted_payload": item.encrypted_payload} for item in updates],
+    }
+
+@router.post("/{doc_id}/collaboration-initialize")
+async def initialize_collaboration(
+    code: str,
+    doc_id: str,
+    req: CollaborationInitializeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    room, member = await get_room_and_membership(code, user, db)
+    if member.role == "viewer" or room.is_locked:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Editing is not permitted")
+    result = await db.execute(
+        select(Document).where(Document.id == doc_id, Document.room_id == room.id)
+    )
+    doc = result.scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    claim = await db.execute(
+        sql_update(Document)
+        .where(Document.id == doc.id, Document.room_id == room.id, Document.collaboration_initialized == False)
+        .values(collaboration_initialized=True)
+    )
+    if claim.rowcount != 1:
+        await db.rollback()
+        return {"initialized": False}
+
+    db.add(DocumentUpdate(
+        id=req.update_id,
+        room_id=room.id,
+        document_id=doc.id,
+        encrypted_payload=req.encrypted_payload,
+        is_initial=True,
+    ))
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Collaboration initialization conflicted; reload the document")
+    return {"initialized": True}
+
 @router.put("/{doc_id}")
 async def update_document(
     code: str,
@@ -217,6 +301,12 @@ async def delete_document(
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
+    await db.execute(
+        sql_delete(DocumentUpdate).where(
+            DocumentUpdate.room_id == room.id,
+            DocumentUpdate.document_id == doc.id,
+        )
+    )
     await db.delete(doc)
     audit = AuditEvent(
         room_id=room.id,

@@ -159,6 +159,51 @@ async def test_document_save_and_websocket_broadcast_with_envelope():
         assert charlie_list.json()[0]["encrypted_envelope"] == updated_envelope
         assert charlie_list.json()[0]["version"] == 2
 
+
+@pytest.mark.asyncio
+async def test_yjs_update_log_is_room_scoped_and_survives_schema_reinit():
+    """Encrypted CRDT updates restore per document without crossing room boundaries."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        uname = f"yjs_{uuid.uuid4().hex[:8]}"
+        registered = await client.post("/api/auth/register", json={"username": uname, "password": "Password123!"})
+        headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+        room_a = await client.post("/api/rooms", json={"name": "Yjs Room A"}, headers=headers)
+        room_b = await client.post("/api/rooms", json={"name": "Yjs Room B"}, headers=headers)
+        code_a = room_a.json()["room"]["code"]
+        code_b = room_b.json()["room"]["code"]
+
+        created = await client.post(f"/api/rooms/{code_a}/documents", json={
+            "title": "Shared CRDT", "encrypted_envelope": json.dumps({"v": 1, "ciphertext": "initial"})
+        }, headers=headers)
+        doc_id = created.json()["id"]
+        seed_id = str(uuid.uuid4())
+        seed = await client.post(f"/api/rooms/{code_a}/documents/{doc_id}/collaboration-initialize", json={
+            "update_id": seed_id, "encrypted_payload": json.dumps({"v": 1, "ciphertext": "encrypted-yjs-seed"})
+        }, headers=headers)
+        assert seed.status_code == 200
+        assert seed.json()["initialized"] is True
+
+        history_a = await client.get(f"/api/rooms/{code_a}/documents/{doc_id}/collaboration-updates", headers=headers)
+        history_b = await client.get(f"/api/rooms/{code_b}/documents/{doc_id}/collaboration-updates", headers=headers)
+        assert history_a.status_code == 200
+        assert history_a.json()["initialized"] is True
+        assert [item["update_id"] for item in history_a.json()["updates"]] == [seed_id]
+        assert history_b.status_code == 404
+
+        # A repeated initializer must not replace the first writer's CRDT seed.
+        second_seed = await client.post(f"/api/rooms/{code_a}/documents/{doc_id}/collaboration-initialize", json={
+            "update_id": str(uuid.uuid4()), "encrypted_payload": "second-seed"
+        }, headers=headers)
+        assert second_seed.status_code == 200
+        assert second_seed.json()["initialized"] is False
+
+        await init_db()
+        history_after_reinit = await client.get(
+            f"/api/rooms/{code_a}/documents/{doc_id}/collaboration-updates", headers=headers
+        )
+        assert history_after_reinit.json() == history_a.json()
+
 class MockWebSocket:
     def __init__(self):
         self.accepted = False

@@ -1,6 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import Collaboration from '@tiptap/extension-collaboration';
+import * as Y from 'yjs';
+import { prosemirrorJSONToYDoc } from 'y-prosemirror';
 import {
   Bold,
   Italic,
@@ -19,8 +23,24 @@ import {
   FileCode,
   Sparkles
 } from 'lucide-react';
-import { encryptEnvelope, decryptEnvelope, EncryptedEnvelope } from '../lib/crypto';
+import { encryptEnvelope, decryptEnvelope } from '../lib/crypto';
 import { api } from '../lib/api';
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
 
 interface EditorViewProps {
   document: any;
@@ -29,10 +49,11 @@ interface EditorViewProps {
   isLocked: boolean;
   currentUserRole: string;
   onSaveDocument: (docId: string, encryptedEnvelope: string) => Promise<void>;
-  onBroadcastDelta: (docId: string, encryptedPayload: string) => void;
+  onBroadcastDelta: (docId: string, updateId: string, encryptedPayload: string) => void;
   onSaveStatusChange?: (status: 'saved' | 'saving' | 'unsaved') => void;
   latestDelta?: any;
   remoteDeltas?: any[];
+  connectionState?: string;
 }
 
 export const EditorView: React.FC<EditorViewProps> = ({
@@ -44,8 +65,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onSaveDocument,
   onBroadcastDelta,
   onSaveStatusChange,
-  latestDelta,
   remoteDeltas,
+  connectionState,
 }) => {
   const [plaintext, setPlaintext] = useState<string>('');
   const [isDecrypting, setIsDecrypting] = useState<boolean>(true);
@@ -59,10 +80,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [exporting, setExporting] = useState<boolean>(false);
   const [exportResult, setExportResult] = useState<any | null>(null);
 
-  // References to prevent broadcast echo loops and debounce network updates
-  const isRemoteUpdateRef = useRef<boolean>(false);
-  const broadcastTimerRef = useRef<number | null>(null);
+  const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null);
+  const collabDocRef = useRef<Y.Doc | null>(null);
+  const appliedUpdateIdsRef = useRef<Set<string>>(new Set());
   const autoSaveTimerRef = useRef<number | null>(null);
+  const REMOTE_ORIGIN = useMemo(() => ({}), []);
 
   // Auto-masking regex for credit cards (13-19 digits) and account numbers
   const maskSensitiveNumbers = (text: string) => {
@@ -72,34 +94,16 @@ export const EditorView: React.FC<EditorViewProps> = ({
     });
   };
 
-  // Unified content change handler for rich text and code editing
-  const handleContentChange = (newContent: string) => {
-    setPlaintext(newContent);
-    updateSaveStatus('unsaved');
-
-    // 1. FAST REAL-TIME BROADCAST: 120ms debounce delivers keystrokes to peers instantly
-    if (broadcastTimerRef.current) {
-      window.clearTimeout(broadcastTimerRef.current);
-    }
-    broadcastTimerRef.current = window.setTimeout(async () => {
-      if (!roomKey || !doc) return;
-      try {
-        const envelope = await encryptEnvelope(newContent, roomKey);
-        onBroadcastDelta(doc.id, JSON.stringify(envelope));
-      } catch {
-        // Encryption or broadcast skipped
-      }
-    }, 120);
-
-    // 2. PERSISTENT BACKGROUND AUTOSAVE: 1500ms debounce saves to database
-    if (autoSaveTimerRef.current) {
-      window.clearTimeout(autoSaveTimerRef.current);
-    }
+  const scheduleSnapshotSave = (newContent: string) => {
+    if (autoSaveTimerRef.current) window.clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = window.setTimeout(async () => {
       if (!roomKey || !doc) return;
       try {
         updateSaveStatus('saving');
-        const envelope = await encryptEnvelope(newContent, roomKey);
+        const content = doc.doc_type === 'code'
+          ? (collabDocRef.current?.getText('code').toString() ?? newContent)
+          : (editor?.getHTML() ?? newContent);
+        const envelope = await encryptEnvelope(content, roomKey);
         await onSaveDocument(doc.id, JSON.stringify(envelope));
         updateSaveStatus('saved');
       } catch {
@@ -108,153 +112,170 @@ export const EditorView: React.FC<EditorViewProps> = ({
     }, 1500);
   };
 
-  // Setup TipTap Editor with instant real-time collaborative broadcast
+  // Code documents use Y.Text. Apply the changed range so concurrent typing
+  // produces CRDT insert/delete operations instead of replacing whole snapshots.
+  const handleContentChange = (newContent: string) => {
+    setPlaintext(newContent);
+    updateSaveStatus('unsaved');
+    if (doc?.doc_type === 'code' && collabDocRef.current) {
+      const sharedText = collabDocRef.current.getText('code');
+      const oldValue = sharedText.toString();
+      let prefix = 0;
+      while (prefix < oldValue.length && prefix < newContent.length && oldValue[prefix] === newContent[prefix]) prefix++;
+      let suffix = 0;
+      while (suffix < oldValue.length - prefix && suffix < newContent.length - prefix &&
+        oldValue[oldValue.length - 1 - suffix] === newContent[newContent.length - 1 - suffix]) suffix++;
+      collabDocRef.current.transact(() => {
+        const deleteCount = oldValue.length - prefix - suffix;
+        if (deleteCount) sharedText.delete(prefix, deleteCount);
+        const insertion = newContent.slice(prefix, newContent.length - suffix);
+        if (insertion) sharedText.insert(prefix, insertion);
+      });
+    }
+    scheduleSnapshotSave(newContent);
+  };
+
+  const editorExtensions = useMemo(() => {
+    const extensions = [StarterKit.configure({ history: false })];
+    if (collabDoc) extensions.push(Collaboration.configure({ document: collabDoc }) as any);
+    return extensions;
+  }, [collabDoc]);
+
   const editor = useEditor({
-    extensions: [StarterKit],
-    content: plaintext,
+    extensions: editorExtensions,
     editable: !isLocked && currentUserRole !== 'viewer',
     onUpdate: ({ editor }) => {
-      // If the content change was injected from a remote collaborator, do NOT re-broadcast!
-      if (isRemoteUpdateRef.current) return;
-      handleContentChange(editor.getHTML());
+      if (doc?.doc_type === 'document') {
+        updateSaveStatus('unsaved');
+        scheduleSnapshotSave(editor.getHTML());
+      }
     },
-  });
+  }, [collabDoc]);
 
-  // Cleanup debounce timers on unmount
   useEffect(() => {
     return () => {
-      if (broadcastTimerRef.current) window.clearTimeout(broadcastTimerRef.current);
       if (autoSaveTimerRef.current) window.clearTimeout(autoSaveTimerRef.current);
     };
   }, []);
 
-  // Decrypt document when document or roomKey changes
+  const loadYDoc = async (history: { updates: Array<{ update_id: string; encrypted_payload: string }> }) => {
+    const ydoc = new Y.Doc();
+    for (const item of history.updates) {
+      const plain = await decryptEnvelope(item.encrypted_payload, roomKey!);
+      Y.applyUpdate(ydoc, base64ToBytes(plain), REMOTE_ORIGIN);
+      appliedUpdateIdsRef.current.add(item.update_id);
+    }
+    return ydoc;
+  };
+
+  // Restore the room/document CRDT log. Exactly one joining editor claims the
+  // initial state; simultaneous first joins reload the winning encrypted seed.
   useEffect(() => {
     let active = true;
-    if (broadcastTimerRef.current) {
-      window.clearTimeout(broadcastTimerRef.current);
-      broadcastTimerRef.current = null;
-    }
     if (autoSaveTimerRef.current) {
       window.clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
-
-    const loadAndDecrypt = async () => {
-      if (!doc) return;
+    setCollabDoc(null);
+    collabDocRef.current?.destroy();
+    collabDocRef.current = null;
+    appliedUpdateIdsRef.current.clear();
+    const prepare = async () => {
+      if (!doc || !roomKey || !roomCode) return;
       setIsDecrypting(true);
-
-      let envelope = doc.encrypted_envelope;
-      // Fallback: If envelope is missing but document has saved content in database, fetch it directly
-      if (!envelope && doc.has_content && roomCode) {
-        try {
-          const fullDoc = await api.getDocument(roomCode, doc.id);
-          if (fullDoc && fullDoc.encrypted_envelope) {
-            envelope = fullDoc.encrypted_envelope;
-          }
-        } catch (e) {
-          console.warn('[Editor] Failed to fetch full document envelope:', e);
-        }
-      }
-
-      if (!envelope) {
-        // Empty document template
-        const initial = doc.doc_type === 'code'
-          ? `// VaultRoom Secure Code Document\n// File: ${doc.title}\n// Language: ${doc.language || 'typescript'}\n\nexport async function secureHandler() {\n  console.log("End-to-end encrypted execution context.");\n}\n`
-          : `<h1>${doc.title}</h1><p>Start collaborating securely in this end-to-end encrypted document.</p>`;
-        
-        if (active) {
-          isRemoteUpdateRef.current = true;
-          setPlaintext(initial);
-          editor?.commands.setContent(initial, false);
-          setIsDecrypting(false);
-          updateSaveStatus('saved');
-          setTimeout(() => {
-            isRemoteUpdateRef.current = false;
-          }, 80);
-        }
-        return;
-      }
-
-      if (!roomKey) {
-        if (active) {
-          setPlaintext('/* Missing document encryption key. Please join room with valid room key. */');
-          setIsDecrypting(false);
-        }
-        return;
-      }
-
       try {
-        const decrypted = await decryptEnvelope(envelope, roomKey);
-        if (active) {
-          const currentContent = doc.doc_type === 'code' ? plaintext : (editor ? editor.getHTML() : plaintext);
-          if (decrypted !== currentContent) {
-            isRemoteUpdateRef.current = true;
-            setPlaintext(decrypted);
-            editor?.commands.setContent(decrypted, false);
-            setTimeout(() => {
-              isRemoteUpdateRef.current = false;
-            }, 80);
+        let history = await api.listCollaborationUpdates(roomCode, doc.id);
+        let ydoc: Y.Doc;
+        if (history.initialized && !history.updates.length) {
+          throw new Error('Collaboration history is marked initialized but is missing its saved seed. Document was not modified.');
+        }
+        if (history.initialized) {
+          ydoc = await loadYDoc(history);
+        } else {
+          let envelope = doc.encrypted_envelope;
+          if (!envelope && doc.has_content) {
+            const fullDoc = await api.getDocument(roomCode, doc.id);
+            envelope = fullDoc?.encrypted_envelope;
           }
-          setIsDecrypting(false);
-          updateSaveStatus('saved');
+          let initialContent = envelope ? await decryptEnvelope(envelope, roomKey) :
+            (doc.doc_type === 'code'
+              ? `// VaultRoom Secure Code Document\n// File: ${doc.title}\n// Language: ${doc.language || 'typescript'}\n\nexport async function secureHandler() {\n  console.log("End-to-end encrypted execution context.");\n}\n`
+              : `<h1>${doc.title}</h1><p>Start collaborating securely in this end-to-end encrypted document.</p>`);
+          if (doc.doc_type === 'code') {
+            ydoc = new Y.Doc();
+            ydoc.getText('code').insert(0, initialContent);
+          } else {
+            const seedEditor = new Editor({
+              element: window.document.createElement('div'),
+              extensions: [StarterKit.configure({ history: false })],
+              content: initialContent,
+            });
+            ydoc = prosemirrorJSONToYDoc(seedEditor.schema, seedEditor.getJSON(), 'default');
+            seedEditor.destroy();
+          }
+          const seed = JSON.stringify(await encryptEnvelope(bytesToBase64(Y.encodeStateAsUpdate(ydoc)), roomKey));
+          const initialized = await api.initializeCollaboration(roomCode, doc.id, crypto.randomUUID(), seed);
+          if (!initialized.initialized) {
+            ydoc.destroy();
+            history = await api.listCollaborationUpdates(roomCode, doc.id);
+            ydoc = await loadYDoc(history);
+          }
         }
+        if (!active) { ydoc.destroy(); return; }
+        collabDocRef.current = ydoc;
+        if (doc.doc_type === 'code') setPlaintext(ydoc.getText('code').toString());
+        setCollabDoc(ydoc);
+        setIsDecrypting(false);
+        updateSaveStatus('saved');
       } catch (err) {
-        if (active) {
-          setPlaintext(`<p style="color:#ef4444;">[Decryption Error]: Ciphertext integrity check failed or invalid room key.</p>`);
-          setIsDecrypting(false);
-        }
+        if (active) { console.error('[Editor] Failed to restore collaboration state:', err); setPlaintext('Unable to load the encrypted collaboration state.'); setIsDecrypting(false); updateSaveStatus('unsaved'); }
       }
     };
-
-    loadAndDecrypt();
+    void prepare();
     return () => {
       active = false;
+      collabDocRef.current?.destroy();
+      collabDocRef.current = null;
     };
-  }, [doc?.id, doc?.encrypted_envelope, roomKey, editor]);
+  }, [doc?.id, roomCode, roomKey]);
 
-  // Handle remote incoming deltas
-  const lastAppliedTimestampRef = useRef<number>(0);
+  // Local CRDT updates are encrypted and persisted/broadcast as independent events.
+  useEffect(() => {
+    if (!collabDoc || !doc || !roomKey) return;
+    const onUpdate = (update: Uint8Array, origin: unknown) => {
+      if (origin === REMOTE_ORIGIN) return;
+      const updateId = crypto.randomUUID();
+      void encryptEnvelope(bytesToBase64(update), roomKey)
+        .then((envelope) => onBroadcastDelta(doc.id, updateId, JSON.stringify(envelope)))
+        .catch((error) => console.error('[Editor] Failed to encrypt a collaboration update:', error));
+    };
+    collabDoc.on('update', onUpdate);
+    return () => { collabDoc.off('update', onUpdate); };
+  }, [collabDoc, doc?.id, roomKey, onBroadcastDelta]);
 
   useEffect(() => {
-    const delta = latestDelta || (remoteDeltas && remoteDeltas.length > 0 ? remoteDeltas[remoteDeltas.length - 1] : null);
-    if (!delta || !roomKey || !doc) return;
-
-    if (delta.timestamp && delta.timestamp <= lastAppliedTimestampRef.current) {
-      return;
+    if (!collabDoc || !roomKey || !doc || !remoteDeltas?.length) return;
+    for (const delta of remoteDeltas) {
+      if (delta.document_id !== doc.id || !delta.update_id || appliedUpdateIdsRef.current.has(delta.update_id)) continue;
+      appliedUpdateIdsRef.current.add(delta.update_id);
+      if (appliedUpdateIdsRef.current.size > 2000) {
+        const oldest = appliedUpdateIdsRef.current.values().next().value;
+        if (oldest) appliedUpdateIdsRef.current.delete(oldest);
+      }
+      void decryptEnvelope(delta.encrypted_payload, roomKey)
+        .then((plain) => Y.applyUpdate(collabDoc, base64ToBytes(plain), REMOTE_ORIGIN))
+        .catch((error) => console.error('[Editor] Failed to apply encrypted Yjs update:', error));
     }
+  }, [collabDoc, remoteDeltas, doc?.id, roomKey, REMOTE_ORIGIN]);
 
-    if (delta.document_id === doc.id) {
-      decryptEnvelope(delta.encrypted_payload, roomKey).then((incomingText) => {
-        const currentContent = doc.doc_type === 'code' ? plaintext : (editor ? editor.getHTML() : plaintext);
-        if (incomingText && incomingText !== currentContent) {
-          console.log(`[Editor] Applied real-time remote delta for document: ${doc.id}`);
-          lastAppliedTimestampRef.current = delta.timestamp || Date.now();
-          isRemoteUpdateRef.current = true;
-
-          if (doc.doc_type === 'code') {
-            setPlaintext(incomingText);
-          } else if (editor) {
-            const { from } = editor.state.selection;
-            editor.commands.setContent(incomingText, false);
-            setPlaintext(incomingText);
-            try {
-              const docSize = editor.state.doc.content.size;
-              const safePos = Math.min(from, docSize);
-              editor.commands.setTextSelection(safePos);
-            } catch {}
-          }
-
-          updateSaveStatus('saved');
-          setTimeout(() => {
-            isRemoteUpdateRef.current = false;
-          }, 80);
-        }
-      }).catch((err) => {
-        console.error('[Editor] Failed to decrypt remote delta. Verify room passphrase:', err);
-      });
-    }
-  }, [latestDelta, remoteDeltas, editor, doc?.id, doc?.doc_type, roomKey]);
+  // Resend the merged state after reconnect; Yjs applies duplicate state updates idempotently.
+  useEffect(() => {
+    if (!collabDoc || !doc || !roomKey || connectionState !== 'connected') return;
+    const updateId = crypto.randomUUID();
+    void encryptEnvelope(bytesToBase64(Y.encodeStateAsUpdate(collabDoc)), roomKey)
+      .then((envelope) => onBroadcastDelta(doc.id, updateId, JSON.stringify(envelope)))
+      .catch((error) => console.error('[Editor] Failed to send collaboration state after reconnect:', error));
+  }, [collabDoc, connectionState, doc?.id, roomKey, onBroadcastDelta]);
 
   // Encrypt & Save Document
   const handleSave = async () => {
@@ -265,19 +286,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
       window.clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
-    if (broadcastTimerRef.current) {
-      window.clearTimeout(broadcastTimerRef.current);
-      broadcastTimerRef.current = null;
-    }
-
     try {
       const currentContent = doc.doc_type === 'code' ? plaintext : (editor ? editor.getHTML() : plaintext);
       const envelope = await encryptEnvelope(currentContent, roomKey);
       const envelopeStr = JSON.stringify(envelope);
 
       await onSaveDocument(doc.id, envelopeStr);
-      // Broadcast encrypted delta to other participants
-      onBroadcastDelta(doc.id, envelopeStr);
       updateSaveStatus('saved');
     } catch {
       updateSaveStatus('unsaved');
@@ -466,10 +480,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           <div className="h-full flex flex-col">
             <textarea
               value={autoMask ? maskSensitiveNumbers(plaintext) : plaintext}
-              onChange={(e) => {
-                if (isRemoteUpdateRef.current) return;
-                handleContentChange(e.target.value);
-              }}
+              onChange={(e) => handleContentChange(e.target.value)}
               disabled={isLocked || currentUserRole === 'viewer'}
               className="flex-1 w-full bg-[#0a0c13] font-mono text-sm leading-relaxed text-cyan-300 p-4 rounded-lg border border-[#1f2438] focus:outline-none focus:border-cyan-500/50 resize-none"
               spellCheck={false}

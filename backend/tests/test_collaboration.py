@@ -2,6 +2,7 @@ import pytest
 import pytest_asyncio
 import uuid
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy import select
 from app.main import app
 from app.collaboration.manager import manager
 from app.database.session import init_db
@@ -115,11 +116,55 @@ async def test_two_client_collaboration_and_presence():
     await manager.disconnect(room_code, "sock_bob_2")
     assert room_code not in manager.active_rooms
 
+
+@pytest.mark.asyncio
+async def test_simultaneous_rooms_isolate_updates_presence_and_disconnects():
+    """Two live rooms remain independent while both relay document updates."""
+    rooms = {
+        "RMA2AA": [MockWebSocket(), MockWebSocket()],
+        "RMB2BB": [MockWebSocket(), MockWebSocket()],
+    }
+    sockets = {}
+    for code, peers in rooms.items():
+        for index, ws in enumerate(peers):
+            socket_id = f"{code}-{index}"
+            sockets[(code, index)] = socket_id
+            await manager.connect(
+                websocket=ws,
+                room_code=code,
+                socket_id=socket_id,
+                user_id=f"user-{code}-{index}",
+                username=f"user-{index}",
+                role="editor",
+            )
+
+    await manager.handle_message("RMA2AA", sockets[("RMA2AA", 0)], {
+        "type": "YJS_UPDATE", "document_id": "doc-room-a", "encrypted_payload": "update-a"
+    })
+    await manager.handle_message("RMB2BB", sockets[("RMB2BB", 0)], {
+        "type": "YJS_UPDATE", "document_id": "doc-room-b", "encrypted_payload": "update-b"
+    })
+
+    room_a_peer = rooms["RMA2AA"][1]
+    room_b_peer = rooms["RMB2BB"][1]
+    assert [m["encrypted_payload"] for m in room_a_peer.sent_messages if m["type"] == "YJS_UPDATE"] == ["update-a"]
+    assert [m["encrypted_payload"] for m in room_b_peer.sent_messages if m["type"] == "YJS_UPDATE"] == ["update-b"]
+    assert not any(m.get("encrypted_payload") == "update-b" for m in room_a_peer.sent_messages)
+    assert not any(m.get("encrypted_payload") == "update-a" for m in room_b_peer.sent_messages)
+
+    await manager.disconnect("RMA2AA", sockets[("RMA2AA", 0)])
+    assert len(manager.active_rooms["RMB2BB"]) == 2
+    assert len(manager.get_online_users("RMB2BB")) == 2
+
+    for code, peers in rooms.items():
+        for index in range(2):
+            await manager.disconnect(code, sockets[(code, index)])
+
 from fastapi.testclient import TestClient
 from app.auth.security import create_access_token
 from app.rooms.service import RoomService
 from app.database.session import AsyncSessionLocal
-from app.database.models import User
+from app.database.models import User, Document, DocumentUpdate
 from app.auth.security import hash_password
 
 def test_websocket_endpoint_e2e_two_clients():
@@ -144,14 +189,20 @@ def test_websocket_endpoint_e2e_two_clients():
             await db.refresh(bob)
             
             room = await RoomService.create_room(db, alice, name="Test Collaboration Room")
-            return alice, bob, room
+            doc = Document(room_id=room.id, title="Shared WebSocket Document")
+            db.add(doc)
+            await db.commit()
+            await db.refresh(doc)
+            return alice, bob, room, doc
 
-    alice, bob, room = asyncio.run(create_users_and_room())
+    alice, bob, room, doc = asyncio.run(create_users_and_room())
+    update_id = str(uuid.uuid4())
 
     token_alice = create_access_token({"sub": alice.id, "username": alice.username, "role": alice.role})
     token_bob = create_access_token({"sub": bob.id, "username": bob.username, "role": bob.role})
 
     client = TestClient(app)
+    client.__enter__()
 
     with client.websocket_connect(f"/ws/{room.code}?token={token_alice}") as ws_alice:
         init_alice = ws_alice.receive_json()
@@ -167,21 +218,46 @@ def test_websocket_endpoint_e2e_two_clients():
             assert joined_msg["type"] == "USER_JOINED"
             assert joined_msg["username"] == bob.username
 
+            # A room socket cannot inject updates for nonexistent or foreign documents.
+            ws_alice.send_json({
+                "type": "YJS_UPDATE",
+                "document_id": str(uuid.uuid4()),
+                "update_id": str(uuid.uuid4()),
+                "encrypted_payload": "forged"
+            })
+            rejected = ws_alice.receive_json()
+            assert rejected["type"] == "ERROR"
+            assert "document" in rejected["message"].lower()
+
             # Alice sends YJS_UPDATE
             ws_alice.send_json({
                 "type": "YJS_UPDATE",
-                "document_id": "doc_xyz",
+                "document_id": doc.id,
+                "update_id": update_id,
                 "encrypted_payload": "E2EE_PAYLOAD_TEST"
             })
 
             # Bob receives YJS_UPDATE
             update_msg = ws_bob.receive_json()
             assert update_msg["type"] == "YJS_UPDATE"
-            assert update_msg["document_id"] == "doc_xyz"
+            assert update_msg["document_id"] == doc.id
             assert update_msg["encrypted_payload"] == "E2EE_PAYLOAD_TEST"
 
             # Ping Pong check
             ws_bob.send_json({"type": "PING"})
             pong_msg = ws_bob.receive_json()
             assert pong_msg["type"] == "PONG"
+
+    client.__exit__(None, None, None)
+
+    async def read_persisted_update():
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(DocumentUpdate).where(DocumentUpdate.id == update_id))
+            return result.scalar_one_or_none()
+
+    persisted_update = asyncio.run(read_persisted_update())
+    assert persisted_update is not None
+    assert persisted_update.room_id == room.id
+    assert persisted_update.document_id == doc.id
+    assert persisted_update.encrypted_payload == "E2EE_PAYLOAD_TEST"
 

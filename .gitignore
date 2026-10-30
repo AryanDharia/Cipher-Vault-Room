@@ -4,6 +4,7 @@ node_modules/
 .pnp.js
 dist/
 !frontend/dist/
+frontend/src-tauri/target/
 build/
 coverage/
 

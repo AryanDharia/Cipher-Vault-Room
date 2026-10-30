@@ -2,6 +2,8 @@
  * VaultRoom WebSocket Client Manager
  * Handles resilient real-time synchronization, presence, and security notifications.
  */
+import { isTauri } from '@tauri-apps/api/core';
+
 
 export type ConnectionState = 'connected' | 'connecting' | 'disconnected' | 'reconnecting';
 
@@ -44,6 +46,12 @@ export class VaultWebSocket {
     if (envWs) {
       const base = envWs.endsWith('/') ? envWs.slice(0, -1) : envWs;
       return `${base}/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
+    }
+
+    // Tauri's webview host is not the API host. Use the same shared Render
+    // service as the browser client for REST and WebSocket traffic.
+    if (isTauri()) {
+      return `wss://cipher-vault-room.onrender.com/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
     }
 
     // 2. Dynamic origin detection (Works locally & on Render single-service)

@@ -78,11 +78,23 @@ class Document(Base):
     is_protected = Column(Boolean, default=False, nullable=False)
     # Zero-knowledge encrypted envelope: JSON string { iv, ciphertext, tag, v, salt }
     encrypted_envelope = Column(Text, nullable=True)
+    collaboration_initialized = Column(Boolean, default=False, nullable=False)
     version = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     room = relationship("Room", back_populates="documents")
+
+class DocumentUpdate(Base):
+    """Opaque, client-encrypted Yjs updates belonging to one room document."""
+    __tablename__ = "document_updates"
+
+    id = Column(String(36), primary_key=True)
+    room_id = Column(String(36), ForeignKey("rooms.id", ondelete="CASCADE"), index=True, nullable=False)
+    document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), index=True, nullable=False)
+    encrypted_payload = Column(Text, nullable=False)
+    is_initial = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 class ThresholdApproval(Base):
     __tablename__ = "threshold_approvals"

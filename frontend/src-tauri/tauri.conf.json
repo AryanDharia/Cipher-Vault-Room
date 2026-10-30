@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VaultRoom",
+  "version": "1.0.0",
+  "identifier": "com.vaultroom.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --host 127.0.0.1",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      { "title": "VaultRoom", "width": 1440, "height": 900, "minWidth": 1024, "minHeight": 700 }
+    ],
+    "security": {
+      "csp": "default-src 'self' asset: http://tauri.localhost; connect-src ipc: http://ipc.localhost https://cipher-vault-room.onrender.com wss://cipher-vault-room.onrender.com; frame-src 'self' blob:; img-src 'self' asset: http://tauri.localhost blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "category": "Productivity",
+    "shortDescription": "Secure collaborative workspaces",
+    "longDescription": "VaultRoom desktop client for secure collaborative rooms.",
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" }
+    }
+  }
+}
