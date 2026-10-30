@@ -53,6 +53,12 @@ export class VaultWebSocket {
       return `${base}/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
     }
 
+    // Cloudflare Pages hosts only the static frontend. If the build-time
+    // WebSocket URL was omitted, keep collaboration on the shared Render API.
+    if (typeof window !== 'undefined' && window.location.hostname.endsWith('.pages.dev')) {
+      return `wss://cipher-vault-room.onrender.com/ws/${this.roomCode}?token=${encodeURIComponent(this.token)}`;
+    }
+
     // Tauri's webview host is not the API host. Use the same shared Render
     // service as the browser client for REST and WebSocket traffic.
     if (isTauri()) {

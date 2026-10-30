@@ -2,12 +2,17 @@
  * VaultRoom API Client
  */
 
-// Support explicit environment variable VITE_API_URL or default to relative /api
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { secureStorage } from './secureStorage';
 
-const API_BASE = import.meta.env.VITE_API_URL ||
-  (isTauri() ? 'https://cipher-vault-room.onrender.com/api' : '/api');
+const RENDER_API_BASE = 'https://cipher-vault-room.onrender.com/api';
+const isCloudflarePages = typeof window !== 'undefined' && window.location.hostname.endsWith('.pages.dev');
+const configuredApiBase = import.meta.env.VITE_API_URL?.replace(/\/+$/, '');
+const selectedApiBase = configuredApiBase ||
+  (isTauri() || isCloudflarePages ? RENDER_API_BASE : '/api');
+const API_BASE = selectedApiBase === '/api' || selectedApiBase.endsWith('/api')
+  ? selectedApiBase
+  : `${selectedApiBase}/api`;
 
 class ApiClient {
   private token: string | null = null;

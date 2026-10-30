@@ -13,6 +13,8 @@ services:
         value: 22.16.0
       - key: ENVIRONMENT
         value: production
+      - key: CORS_ORIGINS
+        value: https://cipher-vault-room.pages.dev,http://tauri.localhost,https://tauri.localhost,tauri://localhost
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: DATABASE_URL

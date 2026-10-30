@@ -58,14 +58,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration: Allow credentials while properly matching origins
+# The Pages frontend is a separate origin. Keep the allowlist explicit so a
+# configured CORS_ORIGINS value is enforced instead of bypassed by a regex.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Mount REST API routers

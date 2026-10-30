@@ -14,7 +14,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
     # CORS
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,*"
+    CORS_ORIGINS: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "https://cipher-vault-room.pages.dev,"
+        "http://tauri.localhost,https://tauri.localhost,tauri://localhost"
+    )
 
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./vaultroom.db"
