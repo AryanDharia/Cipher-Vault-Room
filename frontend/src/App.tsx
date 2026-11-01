@@ -42,6 +42,7 @@ export function App() {
   const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [remoteDeltas, setRemoteDeltas] = useState<any[]>([]);
   const [latestDelta, setLatestDelta] = useState<any | null>(null);
+  const [latestPresence, setLatestPresence] = useState<any | null>(null);
 
   // UI state
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
@@ -357,6 +358,10 @@ export function App() {
     ws.on('YJS_UPDATE', handleIncomingDelta);
     ws.on('ENCRYPTED_DELTA', handleIncomingDelta);
     ws.on('DOC_SYNC_STEP', handleIncomingDelta);
+
+    ws.on('CURSOR_UPDATE', (data) => {
+      setLatestPresence(data);
+    });
 
     ws.on('AUTH_EXPIRED', () => {
       api.setToken(null);
@@ -691,6 +696,15 @@ export function App() {
       });
     }
     return Promise.reject(new Error('The room WebSocket is not connected; the encrypted update is retained for retry'));
+  }, [roomCode]);
+
+  const handleBroadcastPresence = useCallback((presenceData: any) => {
+    if (wsRef.current && wsRoomCodeRef.current === roomCode) {
+      wsRef.current.send({
+        type: 'CURSOR_UPDATE',
+        cursor: presenceData,
+      });
+    }
   }, [roomCode]);
 
   const handleAddTextSource = async (title: string, content: string, sourceType: string) => {
@@ -1028,7 +1042,10 @@ export function App() {
               roomKey={roomKey}
               isLocked={isLocked}
               currentUserRole={currentUserRole}
+              currentUsername={user?.username}
               onBroadcastDelta={handleBroadcastDelta}
+              onBroadcastPresence={handleBroadcastPresence}
+              latestPresence={latestPresence}
               onSaveStatusChange={(status) => setHasUnsavedChanges(status === 'unsaved')}
               latestDelta={latestDelta}
               remoteDeltas={remoteDeltas}

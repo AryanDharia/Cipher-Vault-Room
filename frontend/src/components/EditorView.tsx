@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import * as Y from 'yjs';
+import { Awareness } from 'y-protocols/awareness';
 import { prosemirrorJSONToYDoc } from 'y-prosemirror';
 import {
   Bold,
@@ -51,11 +52,30 @@ interface EditorViewProps {
   roomKey: CryptoKey | null;
   isLocked: boolean;
   currentUserRole: string;
+  currentUsername?: string;
   onBroadcastDelta: (docId: string, updateId: string, encryptedPayload: string) => Promise<string | null>;
+  onBroadcastPresence?: (presence: { isTyping: boolean; docId: string; lastActive: number; username?: string }) => void;
+  latestPresence?: any;
   onSaveStatusChange?: (status: 'saved' | 'saving' | 'unsaved') => void;
   latestDelta?: any;
   remoteDeltas?: any[];
   connectionState?: string;
+}
+
+function hashClientId(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash = hash & 0x7fffffff;
+  }
+  return hash || 1;
+}
+
+function formatTypingIndicator(users: string[]): string | null {
+  if (!users || users.length === 0) return null;
+  if (users.length === 1) return `${users[0]} is typing...`;
+  if (users.length === 2) return `${users[0]} and ${users[1]} are typing...`;
+  return `${users.length} people are editing`;
 }
 
 export const EditorView: React.FC<EditorViewProps> = ({
@@ -64,7 +84,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
   roomKey,
   isLocked,
   currentUserRole,
+  currentUsername,
   onBroadcastDelta,
+  onBroadcastPresence,
+  latestPresence,
   onSaveStatusChange,
   remoteDeltas,
   connectionState,
@@ -106,6 +129,160 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const appliedUpdateIdsRef = useRef<Set<string>>(new Set());
   const REMOTE_ORIGIN = useMemo(() => ({}), []);
 
+  // Yjs Awareness & Typing Indicators
+  const awarenessRef = useRef<Awareness | null>(null);
+  const typingTimerRef = useRef<number | null>(null);
+  const isTypingRef = useRef<boolean>(false);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+
+  const publishTyping = useCallback((isTyping: boolean) => {
+    if (!doc?.id || !currentUsername) return;
+    if (isTypingRef.current === isTyping && !isTyping) return;
+    isTypingRef.current = isTyping;
+
+    const now = Date.now();
+    if (awarenessRef.current) {
+      awarenessRef.current.setLocalStateField('user', {
+        username: currentUsername,
+        isTyping,
+        lastActive: now,
+        docId: doc.id,
+      });
+    }
+
+    onBroadcastPresence?.({
+      isTyping,
+      docId: doc.id,
+      lastActive: now,
+      username: currentUsername,
+    });
+  }, [currentUsername, doc?.id, onBroadcastPresence]);
+
+  const handleUserTyping = useCallback(() => {
+    if (isLocked || currentUserRole === 'viewer') return;
+
+    publishTyping(true);
+
+    if (typingTimerRef.current) {
+      window.clearTimeout(typingTimerRef.current);
+    }
+
+    // Set isTyping to false after ~1.8s of inactivity (satisfying 1.5–2s requirement)
+    typingTimerRef.current = window.setTimeout(() => {
+      publishTyping(false);
+      typingTimerRef.current = null;
+    }, 1800);
+  }, [isLocked, currentUserRole, publishTyping]);
+
+  const handleEditorBlur = useCallback(() => {
+    if (typingTimerRef.current) {
+      window.clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    publishTyping(false);
+  }, [publishTyping]);
+
+  // Clear typing on document switch or component unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) {
+        window.clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+      publishTyping(false);
+    };
+  }, [doc?.id, publishTyping]);
+
+  // Clear typing on disconnect
+  useEffect(() => {
+    if (connectionState !== 'connected') {
+      if (typingTimerRef.current) {
+        window.clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+      publishTyping(false);
+    }
+  }, [connectionState, publishTyping]);
+
+  // Bind Yjs Awareness to collabDoc
+  useEffect(() => {
+    if (!collabDoc) {
+      if (awarenessRef.current) {
+        awarenessRef.current.destroy();
+        awarenessRef.current = null;
+      }
+      setTypingUsers([]);
+      return;
+    }
+
+    const awareness = new Awareness(collabDoc);
+    awarenessRef.current = awareness;
+
+    // Set initial local state
+    awareness.setLocalStateField('user', {
+      username: currentUsername || 'Anonymous',
+      isTyping: false,
+      lastActive: Date.now(),
+      docId: doc?.id,
+    });
+
+    const updateTypingList = () => {
+      const now = Date.now();
+      const active: string[] = [];
+      awareness.getStates().forEach((state, cId) => {
+        if (cId === awareness.clientID) return; // Do not show self
+        const u = state.user;
+        if (!u || !u.username) return;
+        if (u.username === currentUsername) return; // Never show self
+        if (u.docId && doc?.id && u.docId !== doc.id) return; // Filter other documents
+        if (u.isTyping && now - (u.lastActive || 0) < 3000) {
+          if (!active.includes(u.username)) {
+            active.push(u.username);
+          }
+        }
+      });
+
+      setTypingUsers((prev) => {
+        if (prev.length === active.length && prev.every((u, i) => u === active[i])) {
+          return prev;
+        }
+        return active;
+      });
+    };
+
+    awareness.on('change', updateTypingList);
+    const sweepInterval = window.setInterval(updateTypingList, 800);
+
+    return () => {
+      window.clearInterval(sweepInterval);
+      awareness.off('change', updateTypingList);
+      awareness.destroy();
+      if (awarenessRef.current === awareness) {
+        awarenessRef.current = null;
+      }
+    };
+  }, [collabDoc, currentUsername, doc?.id]);
+
+  // Listen to remote presence and propagate to local Awareness
+  useEffect(() => {
+    if (!latestPresence || !awarenessRef.current) return;
+    const { user_id, username, cursor } = latestPresence;
+    if (!cursor || !username) return;
+    if (username === currentUsername) return;
+    if (cursor.docId && doc?.id && cursor.docId !== doc.id) return;
+
+    const remoteClientId = hashClientId(user_id || username);
+    awarenessRef.current.states.set(remoteClientId, {
+      user: {
+        username,
+        isTyping: !!cursor.isTyping,
+        lastActive: cursor.lastActive || Date.now(),
+        docId: cursor.docId,
+      },
+    });
+    awarenessRef.current.emit('change', [{ added: [], updated: [remoteClientId], removed: [] }, 'remote']);
+  }, [latestPresence, currentUsername, doc?.id]);
+
   // Auto-masking regex for credit cards (13-19 digits) and account numbers
   const maskSensitiveNumbers = (text: string) => {
     return text.replace(/\b(?:\d[ -]*?){13,19}\b/g, (match) => {
@@ -146,7 +323,31 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const editor = useEditor({
     extensions: editorExtensions,
     editable: !isLocked && currentUserRole !== 'viewer' && !isDecrypting && !!collabDoc,
-  }, [collabDoc]);
+    editorProps: {
+      handleDOMEvents: {
+        keydown: () => {
+          handleUserTyping();
+          return false;
+        },
+        input: () => {
+          handleUserTyping();
+          return false;
+        },
+        paste: () => {
+          handleUserTyping();
+          return false;
+        },
+        compositionstart: () => {
+          handleUserTyping();
+          return false;
+        },
+        blur: () => {
+          handleEditorBlur();
+          return false;
+        },
+      },
+    },
+  }, [collabDoc, isLocked, currentUserRole, isDecrypting, handleUserTyping, handleEditorBlur]);
 
   const loadYDoc = async (history: { updates: Array<{ update_id: string; encrypted_payload: string }> }) => {
     const ydoc = new Y.Doc();
@@ -558,16 +759,30 @@ export const EditorView: React.FC<EditorViewProps> = ({
     <div className="flex-1 flex flex-col h-full min-w-0 bg-[#0a0b10] overflow-hidden">
       {/* Document Control Header */}
       <div className="h-11 px-4 border-b border-[#212638] bg-[#0c0e16] flex items-center justify-between select-none">
-        <div className="flex items-center space-x-3">
-          <span className="font-mono text-xs font-semibold text-slate-200">{doc.title}</span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161a29] text-cyan-400 border border-[#212638]">
+        <div className="flex items-center space-x-3 min-w-0">
+          <span className="font-mono text-xs font-semibold text-slate-200 truncate">{doc.title}</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161a29] text-cyan-400 border border-[#212638] shrink-0">
             {doc.doc_type === 'code' ? `${doc.language || 'Code'}` : 'Markdown Rich-Text'}
           </span>
           {doc.is_protected && (
-            <span className="flex items-center space-x-1 text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800/40 text-amber-300">
+            <span className="flex items-center space-x-1 text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800/40 text-amber-300 shrink-0">
               <Lock className="w-3 h-3" />
               <span>Threshold Protected</span>
             </span>
+          )}
+          {formatTypingIndicator(typingUsers) && (
+            <div
+              className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950/40 border border-cyan-800/40 text-cyan-300 text-[11px] font-mono shrink-0 transition-all duration-200"
+              title={typingUsers.join(', ')}
+            >
+              <span className="flex h-1.5 w-1.5 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+              </span>
+              <span className="truncate max-w-[180px] sm:max-w-[300px]">
+                {formatTypingIndicator(typingUsers)}
+              </span>
+            </div>
           )}
         </div>
 
@@ -716,7 +931,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
             <textarea
               ref={codeTextareaRef}
               value={autoMask ? maskSensitiveNumbers(plaintext) : plaintext}
-              onChange={(e) => handleContentChange(e.target.value)}
+              onChange={(e) => {
+                handleContentChange(e.target.value);
+                handleUserTyping();
+              }}
+              onKeyDown={handleUserTyping}
+              onPaste={handleUserTyping}
+              onBlur={handleEditorBlur}
               disabled={isLocked || isDecrypting || !collabDoc || currentUserRole === 'viewer'}
               className="flex-1 w-full bg-[#0a0c13] font-mono text-sm leading-relaxed text-cyan-300 p-4 rounded-lg border border-[#1f2438] focus:outline-none focus:border-cyan-500/50 resize-none"
               spellCheck={false}
