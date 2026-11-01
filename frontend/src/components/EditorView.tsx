@@ -789,8 +789,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
           )}
         </div>
 
-        <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
-          <div className="flex items-center space-x-1.5 px-2 py-1 rounded bg-[#121522] border border-[#212638] text-[11px] font-mono" title={syncError || undefined} aria-live="polite">
+        <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
+          <div className="flex items-center space-x-1 px-2 py-1 rounded bg-[#121522] border border-[#212638] text-[11px] font-mono shrink-0" title={syncError || undefined} aria-live="polite">
             <span className={`w-2 h-2 rounded-full ${
               syncStatus === 'synced' ? 'bg-emerald-400' :
               syncStatus === 'syncing' || syncStatus === 'reconnecting' ? 'bg-amber-400 animate-pulse' :
@@ -801,7 +801,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 syncStatus === 'syncing' ? 'Syncing…' :
                   syncStatus === 'reconnecting' ? 'Reconnecting…' :
                     syncStatus === 'offline' ? 'Offline' :
-                      syncStatus === 'failed' ? 'Sync failed — Retry' : 'Unsaved changes'}
+                      syncStatus === 'failed' ? 'Failed' : 'Unsaved'}
             </span>
             {lastSyncedAt && syncStatus === 'synced' && (
               <span className="hidden xl:inline text-slate-500">{new Date(lastSyncedAt).toLocaleTimeString()}</span>
@@ -818,24 +818,24 @@ export const EditorView: React.FC<EditorViewProps> = ({
             disabled={!collabDoc || syncStatus === 'syncing'}
             title={syncError || 'Save local edits and merge the latest persisted room state'}
             aria-label="Sync Now"
-            className="px-2.5 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] disabled:opacity-50 text-xs font-mono text-slate-200 transition-colors flex items-center space-x-1"
+            className="px-2 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] disabled:opacity-50 text-xs font-mono text-slate-200 transition-colors flex items-center space-x-1"
           >
             <RefreshCw className={`w-3 h-3 text-cyan-400 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-            <span className="hidden md:inline">Sync Now</span><span className="md:hidden">Sync</span>
+            <span className="hidden md:inline">Sync</span>
           </button>
 
           {/* Auto-Masking Toggle */}
           <button
             onClick={() => setAutoMask(!autoMask)}
-            title="Toggle sensitive number masking (PCI/Account masking)"
-            className={`px-2.5 py-1 rounded text-xs font-mono border flex items-center space-x-1 transition-colors ${
+            title="Toggle sensitive number masking"
+            className={`hidden lg:flex px-2 py-1 rounded text-xs font-mono border items-center space-x-1 transition-colors ${
               autoMask
                 ? 'bg-cyan-950/70 border-cyan-500 text-cyan-300'
                 : 'bg-[#121522] border-[#212638] text-slate-400 hover:text-slate-200'
             }`}
           >
             {autoMask ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-            <span className="hidden sm:inline">Auto-Mask</span>
+            <span>Mask</span>
           </button>
 
           {/* Manual Encrypt & Save Button */}
@@ -853,17 +853,18 @@ export const EditorView: React.FC<EditorViewProps> = ({
             onClick={() => handleExport('markdown')}
             disabled={exporting || isLocked}
             title="Export with forensic watermark and tracking token"
-            className="px-2.5 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] text-xs font-mono text-slate-200 transition-colors flex items-center space-x-1"
+            className="hidden sm:flex px-2 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] text-xs font-mono text-slate-200 transition-colors items-center space-x-1"
           >
             <Download className="w-3 h-3 text-cyan-400" />
-            <span className="hidden sm:inline">Export</span>
+            <span>Export</span>
           </button>
         </div>
       </div>
 
       {/* TipTap Formatting Toolbar (Only in Document Mode) */}
       {doc.doc_type === 'document' && editor && (
-        <div className="h-9 px-4 border-b border-[#1b1f30] bg-[#090a10] flex items-center space-x-1 select-none">
+        <div className="h-9 px-4 border-b border-[#1b1f30] bg-[#090a10] flex items-center justify-between select-none">
+          <div className="flex items-center space-x-1">
           <button
             onClick={() => editor.chain().focus().toggleBold().run()}
             className={`p-1.5 rounded hover:bg-[#181d2e] ${
@@ -918,6 +919,21 @@ export const EditorView: React.FC<EditorViewProps> = ({
           >
             <Code className="w-3.5 h-3.5" />
           </button>
+          </div>
+          {formatTypingIndicator(typingUsers) && (
+            <div
+              className="flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-cyan-950/60 border border-cyan-400/50 text-cyan-300 text-[10px] font-mono shrink-0 shadow-[0_0_8px_rgba(6,182,212,0.25)]"
+              title={typingUsers.join(', ')}
+            >
+              <span className="flex h-1.5 w-1.5 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+              </span>
+              <span className="truncate max-w-[200px]">
+                {formatTypingIndicator(typingUsers)}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
