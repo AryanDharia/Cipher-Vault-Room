@@ -699,7 +699,7 @@ export function App() {
   }, [roomCode]);
 
   const handleBroadcastPresence = useCallback((presenceData: any) => {
-    if (wsRef.current && wsRoomCodeRef.current === roomCode) {
+    if (wsRef.current && (!wsRoomCodeRef.current || !roomCode || wsRoomCodeRef.current.toUpperCase() === roomCode.toUpperCase())) {
       wsRef.current.send({
         type: 'CURSOR_UPDATE',
         cursor: presenceData,

@@ -268,7 +268,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     if (!latestPresence || !awarenessRef.current) return;
     const { user_id, username, cursor } = latestPresence;
     if (!cursor || !username) return;
-    if (username === currentUsername) return;
+    if (currentUsername && username.trim().toLowerCase() === currentUsername.trim().toLowerCase()) return;
     if (cursor.docId && doc?.id && cursor.docId !== doc.id) return;
 
     const remoteClientId = hashClientId(user_id || username);
@@ -276,12 +276,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
       user: {
         username,
         isTyping: !!cursor.isTyping,
-        lastActive: cursor.lastActive || Date.now(),
+        lastActive: Date.now(),
         docId: cursor.docId,
       },
     });
     awarenessRef.current.emit('change', [{ added: [], updated: [remoteClientId], removed: [] }, 'remote']);
-  }, [latestPresence, currentUsername, doc?.id]);
+  }, [latestPresence, currentUsername, doc?.id, collabDoc]);
 
   // Auto-masking regex for credit cards (13-19 digits) and account numbers
   const maskSensitiveNumbers = (text: string) => {
@@ -323,6 +323,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const editor = useEditor({
     extensions: editorExtensions,
     editable: !isLocked && currentUserRole !== 'viewer' && !isDecrypting && !!collabDoc,
+    onUpdate: () => {
+      handleUserTyping();
+    },
     editorProps: {
       handleDOMEvents: {
         keydown: () => {
@@ -758,35 +761,35 @@ export const EditorView: React.FC<EditorViewProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full min-w-0 bg-[#0a0b10] overflow-hidden">
       {/* Document Control Header */}
-      <div className="h-11 px-4 border-b border-[#212638] bg-[#0c0e16] flex items-center justify-between select-none">
-        <div className="flex items-center space-x-3 min-w-0">
-          <span className="font-mono text-xs font-semibold text-slate-200 truncate">{doc.title}</span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161a29] text-cyan-400 border border-[#212638] shrink-0">
+      <div className="h-11 px-3 sm:px-4 border-b border-[#212638] bg-[#0c0e16] flex items-center justify-between select-none gap-2 overflow-hidden">
+        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1 overflow-hidden">
+          <span className="font-mono text-xs font-semibold text-slate-200 truncate shrink-0 max-w-[110px] sm:max-w-[200px]">{doc.title}</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161a29] text-cyan-400 border border-[#212638] shrink-0 hidden sm:inline">
             {doc.doc_type === 'code' ? `${doc.language || 'Code'}` : 'Markdown Rich-Text'}
           </span>
           {doc.is_protected && (
             <span className="flex items-center space-x-1 text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800/40 text-amber-300 shrink-0">
               <Lock className="w-3 h-3" />
-              <span>Threshold Protected</span>
+              <span className="hidden md:inline">Threshold Protected</span>
             </span>
           )}
           {formatTypingIndicator(typingUsers) && (
             <div
-              className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950/40 border border-cyan-800/40 text-cyan-300 text-[11px] font-mono shrink-0 transition-all duration-200"
+              className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-400/60 text-cyan-300 text-[11px] font-mono shrink-0 transition-all duration-200 shadow-[0_0_12px_rgba(6,182,212,0.3)]"
               title={typingUsers.join(', ')}
             >
               <span className="flex h-1.5 w-1.5 relative">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
               </span>
-              <span className="truncate max-w-[180px] sm:max-w-[300px]">
+              <span className="truncate max-w-[140px] sm:max-w-[260px]">
                 {formatTypingIndicator(typingUsers)}
               </span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-1 sm:space-x-2 shrink-0">
           <div className="flex items-center space-x-1.5 px-2 py-1 rounded bg-[#121522] border border-[#212638] text-[11px] font-mono" title={syncError || undefined} aria-live="polite">
             <span className={`w-2 h-2 rounded-full ${
               syncStatus === 'synced' ? 'bg-emerald-400' :
@@ -818,7 +821,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             className="px-2.5 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] disabled:opacity-50 text-xs font-mono text-slate-200 transition-colors flex items-center space-x-1"
           >
             <RefreshCw className={`w-3 h-3 text-cyan-400 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-            <span>Sync Now</span>
+            <span className="hidden md:inline">Sync Now</span><span className="md:hidden">Sync</span>
           </button>
 
           {/* Auto-Masking Toggle */}
