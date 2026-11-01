@@ -1,7 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, PlusCircle, LogIn, Users, ArrowRight, ChevronDown, ChevronUp, Lock, Info, Check, User, LogOut, Trash2 } from 'lucide-react';
+import {
+  Shield,
+  ShieldCheck,
+  PlusCircle,
+  LogIn,
+  Users,
+  ArrowRight,
+  ChevronDown,
+  LockKeyhole,
+  Info,
+  User,
+  LogOut,
+  Trash2,
+  KeyRound,
+  FileText,
+  AlertTriangle,
+} from 'lucide-react';
 import { api } from '../lib/api';
 import { deriveRoomKey } from '../lib/crypto';
+import './room-modal.css';
 
 interface RoomModalProps {
   isOpen: boolean;
@@ -9,6 +26,9 @@ interface RoomModalProps {
   onRoomJoined: (roomData: any, roomKey: CryptoKey, passphrase?: string) => void | Promise<void>;
   onLogout?: () => void;
   onOpenDeleteAccount?: () => void;
+  initialMode?: 'create' | 'join';
+  defaultShowAdvanced?: boolean;
+  defaultShowUserMenu?: boolean;
 }
 
 export const RoomModal: React.FC<RoomModalProps> = ({
@@ -17,8 +37,11 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   onRoomJoined,
   onLogout,
   onOpenDeleteAccount,
+  initialMode = 'create',
+  defaultShowAdvanced = false,
+  defaultShowUserMenu = false,
 }) => {
-  const [mode, setMode] = useState<'create' | 'join'>('create');
+  const [mode, setMode] = useState<'create' | 'join'>(initialMode);
   const [roomName, setRoomName] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [passphrase, setPassphrase] = useState('');
@@ -28,14 +51,14 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   const [maxMembers, setMaxMembers] = useState(10);
 
   // Advanced Security (Threshold Consensus)
-  const [showAdvancedSecurity, setShowAdvancedSecurity] = useState(false);
+  const [showAdvancedSecurity, setShowAdvancedSecurity] = useState(defaultShowAdvanced);
   const [thresholdReq, setThresholdReq] = useState(2);
   const [thresholdTot, setThresholdTot] = useState(3);
   const [isAdvancedTouched, setIsAdvancedTouched] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(defaultShowUserMenu);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   // Close user menu on outside click
@@ -129,313 +152,463 @@ export const RoomModal: React.FC<RoomModalProps> = ({
     }
   };
 
+  const isCreate = mode === 'create';
+
   return (
-    <div className="fixed inset-0 bg-[#08090e]/95 backdrop-blur-md flex items-center justify-center z-50 p-4 select-none">
-      {/* Top Left: Logo / Branding */}
-      <div className="absolute top-4 left-4 md:top-6 md:left-8 flex items-center space-x-2.5">
-        <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.25)]">
-          <Shield className="w-4 h-4" />
-        </div>
-        <div className="flex flex-col">
-          <span className="font-mono text-sm font-bold tracking-wider text-white">
-            VAULT<span className="text-cyan-400">ROOM</span>
-          </span>
-          <span className="text-[10px] font-mono text-slate-500 tracking-tight hidden sm:block">
-            Zero-Knowledge Collaborative Workspace
-          </span>
-        </div>
+    <div className="vr-room" role="dialog" aria-modal="true" aria-labelledby="vr-room-heading">
+      {/* Ambient Cyber Grid & Floating Radiant Orbs */}
+      <div className="vr-room__ambient" aria-hidden="true">
+        <span className="vr-room__orb vr-room__orb--cyan" />
+        <span className="vr-room__orb vr-room__orb--teal" />
+        <span className="vr-room__grid" />
       </div>
 
-      {/* Top Right: User Profile & Details Menu */}
-      {user && (
-        <div className="absolute top-4 right-4 md:top-6 md:right-8 z-30" ref={userMenuRef}>
-          <button
-            type="button"
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center space-x-2.5 px-3 py-1.5 rounded-xl bg-[#0f111a] hover:bg-[#151926] border border-[#212638] hover:border-cyan-500/40 transition-all shadow-lg"
-          >
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-950/90 to-cyan-900/40 border border-cyan-700/50 flex items-center justify-center text-cyan-400 shadow-inner">
-              <User className="w-4 h-4" />
-            </div>
-            <div className="flex flex-col text-left">
-              <span className="text-xs font-semibold text-slate-100 leading-tight">{user.username}</span>
-              <span className="text-[10px] font-mono text-cyan-400 uppercase leading-none tracking-wide">
-                {user.role || 'Member'}
-              </span>
-            </div>
-            <ChevronDown
-              className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                showUserMenu ? 'rotate-180 text-cyan-400' : ''
-              }`}
-            />
-          </button>
-
-          {/* User Details Dropdown */}
-          {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-64 rounded-xl bg-[#0f111a] border border-[#212638] shadow-2xl py-2 z-50 animate-fadeIn divide-y divide-[#212638]/60">
-              <div className="px-3.5 py-2.5">
-                <div className="flex items-center space-x-2 mb-1">
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
-                  <span className="text-xs font-bold text-slate-100">{user.username}</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                  <span>Role:</span>
-                  <span className="text-cyan-400 font-semibold uppercase">{user.role || 'Member'}</span>
-                </div>
-                {user.id && (
-                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mt-1">
-                    <span>Account ID:</span>
-                    <span>{user.id.slice(0, 8)}...</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="py-1">
-                {onLogout && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      onLogout();
-                    }}
-                    className="w-full text-left px-3.5 py-2 text-xs font-mono text-slate-300 hover:bg-[#1a1f33] hover:text-white flex items-center space-x-2.5 transition-colors"
-                  >
-                    <LogOut className="w-4 h-4 text-amber-400" />
-                    <span>Sign Out</span>
-                  </button>
-                )}
-
-                {onOpenDeleteAccount && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      onOpenDeleteAccount();
-                    }}
-                    className="w-full text-left px-3.5 py-2 text-xs font-mono text-red-400 hover:bg-red-950/50 hover:text-red-300 flex items-center space-x-2.5 transition-colors border-t border-[#212638]/40"
-                  >
-                    <Trash2 className="w-4 h-4 text-red-400 shrink-0" />
-                    <div className="flex flex-col">
-                      <span className="font-semibold">Delete Account</span>
-                      <span className="text-[10px] text-red-400/70">Permanently erase user data</span>
-                    </div>
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+      {/* Top Header Bar */}
+      <header className="vr-room__top-bar">
+        {/* Brand Identity */}
+        <div className="vr-room__brand">
+          <span className="vr-room__brand-mark" aria-hidden="true">V</span>
+          <div className="vr-room__brand-text">
+            <span className="vr-room__brand-name">VAULT<span>ROOM</span></span>
+            <span className="vr-room__brand-tag">ZERO-KNOWLEDGE WORKSPACE</span>
+          </div>
         </div>
-      )}
 
-      <div className="bg-[#0f111a] border border-[#212638] rounded-xl max-w-lg w-full p-6 shadow-2xl animate-fadeIn">
-        {/* Modal Header Tabs */}
-        <div className="flex items-center space-x-2 border-b border-[#212638] pb-3 mb-4">
+        {/* Top Right User Profile Menu */}
+        {user && (
+          <div className="vr-room__user-area" ref={userMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="vr-room__user-pill"
+              aria-expanded={showUserMenu}
+              aria-haspopup="true"
+              aria-label="User account menu"
+            >
+              <div className="vr-room__user-avatar" aria-hidden="true">
+                <User size={15} />
+              </div>
+              <div className="vr-room__user-info">
+                <span className="vr-room__user-name">{user.username}</span>
+                <span className="vr-room__user-role">{user.role || 'Member'}</span>
+              </div>
+              <ChevronDown size={14} className="vr-room__user-chevron" aria-hidden="true" />
+            </button>
+
+            {/* Dropdown Menu */}
+            {showUserMenu && (
+              <div className="vr-room__user-dropdown" role="menu">
+                <div className="vr-room__dropdown-header">
+                  <div className="vr-room__dropdown-user-row">
+                    <span className="vr-room__dropdown-dot" aria-hidden="true" />
+                    <span className="vr-room__dropdown-username">{user.username}</span>
+                  </div>
+                  <div className="vr-room__dropdown-meta">
+                    <span>Role:</span>
+                    <span className="vr-room__dropdown-role">{user.role || 'Member'}</span>
+                  </div>
+                  {user.id && (
+                    <div className="vr-room__dropdown-meta" style={{ marginTop: '2px', color: '#687a82' }}>
+                      <span>ID:</span>
+                      <span>{user.id.slice(0, 8)}…</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="vr-room__dropdown-actions">
+                  {onLogout && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        onLogout();
+                      }}
+                      className="vr-room__dropdown-btn"
+                    >
+                      <LogOut size={14} style={{ color: '#e5a73b' }} aria-hidden="true" />
+                      <span>Sign Out</span>
+                    </button>
+                  )}
+
+                  {onOpenDeleteAccount && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        onOpenDeleteAccount();
+                      }}
+                      className="vr-room__dropdown-btn vr-room__dropdown-btn--danger"
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                      <div className="vr-room__dropdown-danger-copy">
+                        <span>Delete Account</span>
+                        <span className="vr-room__dropdown-danger-hint">Permanently erase data</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </header>
+
+      {/* Center Modal Card */}
+      <section className="vr-room__card">
+        {/* Subtle Vault Mechanism Watermark */}
+        <svg
+          className="vr-room__watermark"
+          viewBox="0 0 300 300"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <circle cx="150" cy="150" r="140" stroke="currentColor" strokeWidth="1" strokeDasharray="4 6" opacity="0.4" />
+          <circle cx="150" cy="150" r="115" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
+          <circle cx="150" cy="150" r="85" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+          <circle cx="150" cy="150" r="50" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 4" opacity="0.8" />
+          <path d="M150 10 V35 M150 265 V290 M10 150 H35 M265 150 H290" stroke="currentColor" strokeWidth="2" opacity="0.6" />
+          <path d="M51 51 L68 68 M232 232 L249 249 M51 249 L68 232 M232 68 L249 51" stroke="currentColor" strokeWidth="1.5" opacity="0.4" />
+          <rect x="135" y="130" width="30" height="36" rx="6" stroke="currentColor" strokeWidth="2" opacity="0.9" />
+          <path d="M141 130 V122 C141 117 145 113 150 113 C155 113 159 117 159 122 V130" stroke="currentColor" strokeWidth="2" opacity="0.9" />
+          <circle cx="150" cy="145" r="3" fill="currentColor" opacity="0.9" />
+          <path d="M150 148 V155" stroke="currentColor" strokeWidth="2" opacity="0.9" />
+        </svg>
+
+        {/* Card Top Row: Security Tag & Index */}
+        <div className="vr-room__card-top">
+          <span className="vr-room__secure-mark">
+            <LockKeyhole size={14} aria-hidden="true" />
+            <span>Secure Workspace Gateway</span>
+          </span>
+          <span className="vr-room__card-index">01 <i aria-hidden="true" /> 02</span>
+        </div>
+
+        {/* Dynamic Heading based on mode */}
+        <div className="vr-room__heading" key={mode}>
+          <p className="vr-room__heading-kicker">
+            {isCreate ? 'INITIALIZE SECURE VAULT' : 'VERIFIED PARTICIPATION'}
+          </p>
+          <h2 id="vr-room-heading" className="vr-room__heading-title">
+            {isCreate ? 'Create New Room' : 'Join Existing Room'}
+          </h2>
+          <span className="vr-room__heading-subtitle">
+            {isCreate
+              ? 'Deploy a zero-knowledge encrypted room with custom host consensus.'
+              : 'Enter your 6-character room code and client-side encryption passphrase.'}
+          </span>
+        </div>
+
+        {/* Segmented Tab Selector */}
+        <div className="vr-room__tabs" role="tablist" aria-label="Room access options">
           <button
             type="button"
-            onClick={() => setMode('create')}
-            className={`flex-1 py-1.5 text-xs font-mono font-semibold rounded-lg flex items-center justify-center space-x-1.5 transition-colors ${
-              mode === 'create'
-                ? 'bg-cyan-950/60 border border-cyan-500/60 text-cyan-300'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
+            role="tab"
+            aria-selected={isCreate}
+            className={`vr-room__tab ${isCreate ? 'is-active' : ''}`}
+            disabled={loading}
+            onClick={() => {
+              if (loading) return;
+              setMode('create');
+              setError(null);
+            }}
           >
-            <PlusCircle className="w-3.5 h-3.5" />
+            <PlusCircle size={15} aria-hidden="true" />
             <span>Create New Room</span>
           </button>
           <button
             type="button"
-            onClick={() => setMode('join')}
-            className={`flex-1 py-1.5 text-xs font-mono font-semibold rounded-lg flex items-center justify-center space-x-1.5 transition-colors ${
-              mode === 'join'
-                ? 'bg-cyan-950/60 border border-cyan-500/60 text-cyan-300'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
+            role="tab"
+            aria-selected={!isCreate}
+            className={`vr-room__tab ${!isCreate ? 'is-active' : ''}`}
+            disabled={loading}
+            onClick={() => {
+              if (loading) return;
+              setMode('join');
+              setError(null);
+            }}
           >
-            <LogIn className="w-3.5 h-3.5" />
+            <LogIn size={15} aria-hidden="true" />
             <span>Join Existing</span>
           </button>
         </div>
 
+        {/* Error Alert Banner */}
         {error && (
-          <div className="mb-4 p-2.5 rounded bg-red-950/40 border border-red-800/60 text-xs text-red-300 font-mono">
-            {error}
+          <div className="vr-room__error" role="alert">
+            <AlertTriangle size={15} aria-hidden="true" />
+            <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'create' ? (
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="vr-room__form">
+          {isCreate ? (
             <>
-              <div>
-                <label className="text-[11px] font-mono text-slate-400 block mb-1">Room Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Series-A Deal Room"
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  className="w-full bg-[#090b12] border border-[#212638] rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 font-mono"
-                />
-              </div>
-
-              {/* Simplified Room Configuration: Number of Hosts & Total Members Allowed */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-mono text-slate-400 block mb-1 flex items-center space-x-1">
-                    <Shield className="w-3 h-3 text-cyan-400" />
-                    <span>Number of Hosts</span>
+              {/* Room Name */}
+              <div className="vr-room__field">
+                <div className="vr-room__label-row">
+                  <label htmlFor="vr-room-name" className="vr-room__label">
+                    <span>Room Name</span>
                   </label>
-                  <select
-                    value={numHosts}
-                    onChange={(e) => setNumHosts(Number(e.target.value))}
-                    className="w-full bg-[#090b12] border border-[#212638] rounded-lg px-2.5 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500/60"
-                  >
-                    <option value={1}>1 Host (Solo Owner)</option>
-                    <option value={2}>2 Hosts (Host + Co-Host)</option>
-                    <option value={3}>3 Hosts (Consortium)</option>
-                    <option value={5}>5 Hosts (Executive Board)</option>
-                  </select>
-                  <p className="text-[10px] text-slate-500 mt-1">Authorized room managers</p>
                 </div>
-
-                <div>
-                  <label className="text-[11px] font-mono text-slate-400 block mb-1 flex items-center space-x-1">
-                    <Users className="w-3 h-3 text-emerald-400" />
-                    <span>Total Members Allowed</span>
-                  </label>
-                  <select
-                    value={maxMembers}
-                    onChange={(e) => setMaxMembers(Number(e.target.value))}
-                    className="w-full bg-[#090b12] border border-[#212638] rounded-lg px-2.5 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500/60"
-                  >
-                    <option value={5}>5 Members (Small Team)</option>
-                    <option value={10}>10 Members (Standard)</option>
-                    <option value={20}>20 Members (Extended)</option>
-                    <option value={50}>50 Members (Department)</option>
-                  </select>
-                  <p className="text-[10px] text-slate-500 mt-1">Maximum room capacity</p>
+                <div className="vr-room__input-wrap">
+                  <FileText size={16} aria-hidden="true" />
+                  <input
+                    id="vr-room-name"
+                    type="text"
+                    required
+                    disabled={loading}
+                    placeholder="e.g. Series-A Deal Room"
+                    value={roomName}
+                    onChange={(e) => setRoomName(e.target.value)}
+                    spellCheck={false}
+                  />
                 </div>
               </div>
 
-              {/* Expandable Advanced Security & Quorum Consensus */}
-              <div className="rounded-lg border border-[#212638] bg-[#090b12] overflow-hidden">
+              {/* Responsive 2-Column Grid: Hosts & Capacity */}
+              <div className="vr-room__grid-two">
+                {/* Number of Hosts */}
+                <div className="vr-room__field">
+                  <div className="vr-room__label-row">
+                    <label htmlFor="vr-num-hosts" className="vr-room__label">
+                      <ShieldCheck size={13} style={{ color: 'var(--vr-cyan)' }} aria-hidden="true" />
+                      <span>Number of Hosts</span>
+                    </label>
+                  </div>
+                  <div className="vr-room__select-wrap">
+                    <Shield className="vr-room__select-icon" size={15} aria-hidden="true" />
+                    <select
+                      id="vr-num-hosts"
+                      value={numHosts}
+                      onChange={(e) => setNumHosts(Number(e.target.value))}
+                      disabled={loading}
+                      className="vr-room__select"
+                    >
+                      <option value={1}>1 Host (Solo Owner)</option>
+                      <option value={2}>2 Hosts (Host + Co-Host)</option>
+                      <option value={3}>3 Hosts (Consortium)</option>
+                      <option value={5}>5 Hosts (Executive Board)</option>
+                    </select>
+                    <ChevronDown className="vr-room__select-chevron" size={14} aria-hidden="true" />
+                  </div>
+                  <span className="vr-room__field-hint">Authorized room managers</span>
+                </div>
+
+                {/* Total Members Allowed */}
+                <div className="vr-room__field">
+                  <div className="vr-room__label-row">
+                    <label htmlFor="vr-max-members" className="vr-room__label">
+                      <Users size={13} style={{ color: 'var(--vr-teal)' }} aria-hidden="true" />
+                      <span>Total Members Allowed</span>
+                    </label>
+                  </div>
+                  <div className="vr-room__select-wrap">
+                    <Users className="vr-room__select-icon" size={15} aria-hidden="true" />
+                    <select
+                      id="vr-max-members"
+                      value={maxMembers}
+                      onChange={(e) => setMaxMembers(Number(e.target.value))}
+                      disabled={loading}
+                      className="vr-room__select"
+                    >
+                      <option value={5}>5 Members (Small Team)</option>
+                      <option value={10}>10 Members (Standard)</option>
+                      <option value={20}>20 Members (Extended)</option>
+                      <option value={50}>50 Members (Department)</option>
+                    </select>
+                    <ChevronDown className="vr-room__select-chevron" size={14} aria-hidden="true" />
+                  </div>
+                  <span className="vr-room__field-hint">Maximum room capacity</span>
+                </div>
+              </div>
+
+              {/* Advanced Security Disclosure Panel (Threshold Consensus) */}
+              <div className="vr-room__advanced">
                 <button
                   type="button"
                   onClick={() => setShowAdvancedSecurity(!showAdvancedSecurity)}
-                  className="w-full px-3 py-2 text-left flex items-center justify-between text-xs font-mono text-slate-300 hover:text-white hover:bg-[#121522] transition-colors"
+                  aria-expanded={showAdvancedSecurity}
+                  className="vr-room__advanced-toggle"
                 >
-                  <div className="flex items-center space-x-2">
-                    <Lock className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="font-semibold">Advanced Security (Threshold Consensus)</span>
+                  <div className="vr-room__advanced-title-group">
+                    <LockKeyhole size={14} aria-hidden="true" />
+                    <span>Advanced Security (Threshold Consensus)</span>
+                    <span className="vr-room__advanced-badge">
+                      {thresholdReq}-of-{thresholdTot} Quorum
+                    </span>
                   </div>
-                  {showAdvancedSecurity ? (
-                    <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                  )}
+                  <ChevronDown
+                    size={14}
+                    className={`vr-room__advanced-chevron ${showAdvancedSecurity ? 'is-open' : ''}`}
+                    aria-hidden="true"
+                  />
                 </button>
 
                 {showAdvancedSecurity && (
-                  <div className="p-3 border-t border-[#212638] space-y-3 bg-[#0c0e17]">
-                    <div className="text-[11px] text-slate-400 leading-relaxed bg-[#121522] p-2.5 rounded border border-[#1f2438]">
-                      <p className="font-semibold text-slate-300 mb-1 flex items-center space-x-1.5">
-                        <Info className="w-3 h-3 text-cyan-400" />
-                        <span>M-of-N Cryptographic Approvals</span>
-                      </p>
-                      Threshold consensus prevents single-person compromise. Unlocking protected documents or sensitive vault secrets requires approval from at least <strong>{thresholdReq}</strong> of <strong>{thresholdTot}</strong> designated key holders.
+                  <div className="vr-room__advanced-body">
+                    <div className="vr-room__advanced-info">
+                      <Info size={15} aria-hidden="true" />
+                      <div>
+                        <strong style={{ color: '#edf4f5', display: 'block', marginBottom: '2px' }}>
+                          M-of-N Cryptographic Approvals
+                        </strong>
+                        Threshold consensus prevents single-person compromise. Unlocking protected documents or sensitive vault secrets requires approval from at least <strong>{thresholdReq}</strong> of <strong>{thresholdTot}</strong> designated key holders.
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-[11px] font-mono text-slate-400 block mb-1">
+                    <div className="vr-room__grid-two">
+                      <div className="vr-room__field">
+                        <label htmlFor="vr-threshold-req" className="vr-room__label">
                           Approvals Needed (M)
                         </label>
-                        <select
-                          value={thresholdReq}
-                          onChange={(e) => {
-                            setIsAdvancedTouched(true);
-                            setThresholdReq(Number(e.target.value));
-                          }}
-                          className="w-full bg-[#090b12] border border-[#212638] rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:outline-none"
-                        >
-                          <option value={1}>1 Approval (Instant)</option>
-                          <option value={2}>2 Approvals (Consensus)</option>
-                          <option value={3}>3 Approvals (Majority)</option>
-                          <option value={5}>5 Approvals (Strict)</option>
-                        </select>
+                        <div className="vr-room__select-wrap">
+                          <select
+                            id="vr-threshold-req"
+                            value={thresholdReq}
+                            onChange={(e) => {
+                              setIsAdvancedTouched(true);
+                              setThresholdReq(Number(e.target.value));
+                            }}
+                            disabled={loading}
+                            className="vr-room__select"
+                          >
+                            <option value={1}>1 Approval (Instant)</option>
+                            <option value={2}>2 Approvals (Consensus)</option>
+                            <option value={3}>3 Approvals (Majority)</option>
+                            <option value={5}>5 Approvals (Strict)</option>
+                          </select>
+                          <ChevronDown className="vr-room__select-chevron" size={14} aria-hidden="true" />
+                        </div>
                       </div>
 
-                      <div>
-                        <label className="text-[11px] font-mono text-slate-400 block mb-1">
+                      <div className="vr-room__field">
+                        <label htmlFor="vr-threshold-tot" className="vr-room__label">
                           Eligible Key Holders (N)
                         </label>
-                        <select
-                          value={thresholdTot}
-                          onChange={(e) => {
-                            setIsAdvancedTouched(true);
-                            setThresholdTot(Number(e.target.value));
-                          }}
-                          className="w-full bg-[#090b12] border border-[#212638] rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:outline-none"
-                        >
-                          <option value={1}>1 Holder</option>
-                          <option value={2}>2 Holders</option>
-                          <option value={3}>3 Holders</option>
-                          <option value={5}>5 Holders</option>
-                          <option value={7}>7 Holders</option>
-                        </select>
+                        <div className="vr-room__select-wrap">
+                          <select
+                            id="vr-threshold-tot"
+                            value={thresholdTot}
+                            onChange={(e) => {
+                              setIsAdvancedTouched(true);
+                              setThresholdTot(Number(e.target.value));
+                            }}
+                            disabled={loading}
+                            className="vr-room__select"
+                          >
+                            <option value={1}>1 Holder</option>
+                            <option value={2}>2 Holders</option>
+                            <option value={3}>3 Holders</option>
+                            <option value={5}>5 Holders</option>
+                            <option value={7}>7 Holders</option>
+                          </select>
+                          <ChevronDown className="vr-room__select-chevron" size={14} aria-hidden="true" />
+                        </div>
                       </div>
                     </div>
 
                     {thresholdReq > thresholdTot && (
-                      <p className="text-[10px] font-mono text-amber-400 bg-amber-950/40 p-1.5 rounded border border-amber-800/40">
+                      <div className="vr-room__advanced-warning" role="alert">
                         Warning: Approvals needed ({thresholdReq}) cannot exceed total eligible holders ({thresholdTot}).
-                      </p>
+                      </div>
                     )}
                   </div>
                 )}
               </div>
             </>
           ) : (
-            <div>
-              <label className="text-[11px] font-mono text-slate-400 block mb-1">6-Character Room Code</label>
-              <input
-                type="text"
-                required
-                maxLength={6}
-                placeholder="e.g. 7XKM9P"
-                value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-                className="w-full bg-[#090b12] border border-[#212638] rounded-lg px-3 py-2 text-xs font-mono font-bold tracking-widest text-cyan-400 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 uppercase"
-              />
+            /* Join Room Mode: 6-Character Room Code */
+            <div className="vr-room__field">
+              <div className="vr-room__label-row">
+                <label htmlFor="vr-room-code" className="vr-room__label">
+                  <KeyRound size={13} style={{ color: 'var(--vr-cyan)' }} aria-hidden="true" />
+                  <span>6-Character Room Code</span>
+                </label>
+                <span className="vr-room__label-badge">ALPHANUMERIC</span>
+              </div>
+              <div className="vr-room__input-wrap">
+                <KeyRound size={16} aria-hidden="true" />
+                <input
+                  id="vr-room-code"
+                  type="text"
+                  required
+                  maxLength={6}
+                  disabled={loading}
+                  placeholder="e.g. 7XKM9P"
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                  className="vr-room__input-code"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                />
+              </div>
+              <span className="vr-room__field-hint">
+                Enter the exact 6-character room code provided by the room host.
+              </span>
             </div>
           )}
 
-          <div>
-            <label className="text-[11px] font-mono text-slate-400 block mb-1">
-              Zero-Knowledge Passphrase <span className="text-cyan-400 text-[10px]">(Client-Side Only)</span>
-            </label>
-            <input
-              type="password"
-              required
-              placeholder="Shared room decryption passphrase..."
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-              className="w-full bg-[#090b12] border border-[#212638] rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 font-mono"
-            />
-            <p className="text-[10px] text-slate-500 mt-1">
+          {/* Zero-Knowledge Passphrase (Shared by both modes) */}
+          <div className="vr-room__field">
+            <div className="vr-room__label-row">
+              <label htmlFor="vr-room-passphrase" className="vr-room__label">
+                <LockKeyhole size={13} style={{ color: 'var(--vr-teal)' }} aria-hidden="true" />
+                <span>Zero-Knowledge Passphrase</span>
+              </label>
+              <span className="vr-room__label-badge">CLIENT-SIDE ONLY</span>
+            </div>
+            <div className="vr-room__input-wrap">
+              <LockKeyhole size={16} aria-hidden="true" />
+              <input
+                id="vr-room-passphrase"
+                type="password"
+                required
+                disabled={loading}
+                placeholder="Shared room decryption passphrase..."
+                value={passphrase}
+                onChange={(e) => setPassphrase(e.target.value)}
+              />
+            </div>
+            <span className="vr-room__field-hint">
               Derives local AES-256-GCM key via PBKDF2 with 100,000 rounds. Server never observes your passphrase or key.
-            </p>
+            </span>
           </div>
 
+          {/* Submit Action Button */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-mono font-bold text-xs transition-all flex items-center justify-center space-x-1.5 shadow-[0_0_15px_rgba(6,182,212,0.25)]"
+            className="vr-room__submit"
           >
-            <span>{loading ? 'Initializing Vault...' : mode === 'create' ? 'Create Secure Room' : 'Join Room'}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            {loading ? (
+              <>
+                <span className="vr-room__spinner" aria-hidden="true" />
+                <span>{isCreate ? 'Initializing Vault...' : 'Connecting to Room...'}</span>
+              </>
+            ) : (
+              <>
+                <span>{isCreate ? 'Create Secure Room' : 'Join Room'}</span>
+                <ArrowRight size={16} aria-hidden="true" />
+              </>
+            )}
           </button>
         </form>
-      </div>
+
+        {/* Card Footer */}
+        <footer className="vr-room__footer">
+          <div className="vr-room__footer-left">
+            <LockKeyhole size={12} aria-hidden="true" />
+            <span>End-to-end encrypted · Zero-knowledge</span>
+          </div>
+          <div className="vr-room__footer-right">
+            <span>AES-256-GCM · PBKDF2</span>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 };

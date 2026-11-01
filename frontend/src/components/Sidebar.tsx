@@ -39,6 +39,9 @@ interface SidebarProps {
   onAddSecret: (name: string, category: string, value: string, desc?: string) => void;
   onRevealSecret: (secretId: string) => Promise<string | null>;
   onDeleteSecret: (secretId: string) => void;
+  width?: number;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -58,6 +61,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onAddSecret,
   onRevealSecret,
   onDeleteSecret,
+  width,
+  isCollapsed,
+  onToggleCollapse,
 }) => {
   const [activeTab, setActiveTab] = useState<'docs' | 'sources' | 'vault'>('docs');
   
@@ -135,7 +141,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="w-72 border-r border-[#212638] bg-[#0d0f17] flex flex-col h-[calc(100vh-3.5rem)] select-none">
+    <aside
+      style={width !== undefined ? { width: `${width}px`, minWidth: `${width}px` } : undefined}
+      className={`border-r border-[#212638] bg-[#0d0f17] flex flex-col h-full select-none shrink-0 overflow-hidden ${
+        width !== undefined ? '' : 'w-72'
+      }`}
+    >
       {/* Tab Navigation */}
       <div className="flex border-b border-[#212638] bg-[#0c0e15]">
         <button

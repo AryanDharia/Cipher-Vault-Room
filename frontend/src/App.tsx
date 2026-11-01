@@ -9,6 +9,7 @@ import { AuthModal } from './components/AuthModal';
 import { RoomModal } from './components/RoomModal';
 import { SignOutModal, DeleteRoomModal, DeleteAccountModal, KickMemberModal, RoomSettingsModal } from './components/ConfirmModal';
 import { DocumentPreviewModal } from './components/DocumentPreviewModal';
+import { ResizeDivider } from './components/ResizeDivider';
 import { api } from './lib/api';
 import { VaultWebSocket, ConnectionState, RoomUser } from './lib/websocket';
 import { encryptEnvelope, decryptEnvelope, deriveRoomKey } from './lib/crypto';
@@ -56,6 +57,119 @@ export function App() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [bannerNotification, setBannerNotification] = useState<string | null>(null);
   const [activeRightTab, setActiveRightTab] = useState<string>('approvals');
+
+  // Resizable Panels Configuration & State
+  const DEFAULT_LEFT_WIDTH = 272;
+  const MIN_LEFT_WIDTH = 220;
+  const MAX_LEFT_WIDTH = 460;
+
+  const DEFAULT_RIGHT_WIDTH = 320;
+  const MIN_RIGHT_WIDTH = 260;
+  const MAX_RIGHT_WIDTH = 500;
+
+  const [leftWidth, setLeftWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('vaultroom_sidebar_left_width');
+    const val = saved ? Number(saved) : DEFAULT_LEFT_WIDTH;
+    return val >= MIN_LEFT_WIDTH && val <= MAX_LEFT_WIDTH ? val : DEFAULT_LEFT_WIDTH;
+  });
+
+  const [rightWidth, setRightWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('vaultroom_sidebar_right_width');
+    const val = saved ? Number(saved) : DEFAULT_RIGHT_WIDTH;
+    return val >= MIN_RIGHT_WIDTH && val <= MAX_RIGHT_WIDTH ? val : DEFAULT_RIGHT_WIDTH;
+  });
+
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('vaultroom_sidebar_left_collapsed') === 'true';
+  });
+
+  const [isRightCollapsed, setIsRightCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('vaultroom_sidebar_right_collapsed') === 'true';
+  });
+
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    return typeof window !== 'undefined' ? window.innerWidth < 768 : false;
+  });
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, []);
+
+  const baseLeftWidthRef = useRef(leftWidth);
+  const baseRightWidthRef = useRef(rightWidth);
+
+  const handleStartLeftResize = () => {
+    baseLeftWidthRef.current = leftWidth;
+  };
+
+  const handleLeftResize = (delta: number) => {
+    const next = Math.min(MAX_LEFT_WIDTH, Math.max(MIN_LEFT_WIDTH, baseLeftWidthRef.current + delta));
+    setLeftWidth(next);
+  };
+
+  const handleEndLeftResize = () => {
+    localStorage.setItem('vaultroom_sidebar_left_width', String(leftWidth));
+  };
+
+  const handleResetLeft = () => {
+    setLeftWidth(DEFAULT_LEFT_WIDTH);
+    localStorage.setItem('vaultroom_sidebar_left_width', String(DEFAULT_LEFT_WIDTH));
+  };
+
+  const handleStartRightResize = () => {
+    baseRightWidthRef.current = rightWidth;
+  };
+
+  const handleRightResize = (delta: number) => {
+    // Moving pointer left (negative delta) increases right panel width
+    const next = Math.min(MAX_RIGHT_WIDTH, Math.max(MIN_RIGHT_WIDTH, baseRightWidthRef.current - delta));
+    setRightWidth(next);
+  };
+
+  const handleEndRightResize = () => {
+    localStorage.setItem('vaultroom_sidebar_right_width', String(rightWidth));
+  };
+
+  const handleResetRight = () => {
+    setRightWidth(DEFAULT_RIGHT_WIDTH);
+    localStorage.setItem('vaultroom_sidebar_right_width', String(DEFAULT_RIGHT_WIDTH));
+  };
+
+  const handleToggleLeftSidebar = () => {
+    setIsLeftCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('vaultroom_sidebar_left_collapsed', String(next));
+      return next;
+    });
+  };
+
+  const handleToggleRightSidebar = () => {
+    setIsRightCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem('vaultroom_sidebar_right_collapsed', String(next));
+      return next;
+    });
+  };
+
+  // Keyboard shortcut: Ctrl+B or Cmd+B to toggle left sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b' && !e.shiftKey && !e.altKey) {
+        const active = document.activeElement;
+        const isInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || (active as HTMLElement).isContentEditable);
+        if (!isInput) {
+          e.preventDefault();
+          handleToggleLeftSidebar();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const wsRef = useRef<VaultWebSocket | null>(null);
   const wsRoomCodeRef = useRef<string | null>(null);
@@ -815,37 +929,96 @@ export function App() {
         onToggleLock={handleToggleLock}
         activeRightTab={activeRightTab}
         setActiveRightTab={setActiveRightTab}
+        isLeftCollapsed={isLeftCollapsed}
+        onToggleLeftSidebar={handleToggleLeftSidebar}
+        isRightCollapsed={isRightCollapsed}
+        onToggleRightSidebar={handleToggleRightSidebar}
       />
 
       {/* Main Workspace Layout */}
       {roomCode ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 flex overflow-hidden">
-            {/* Left Sidebar */}
-            <Sidebar
-              roomCode={roomCode}
-              documents={documents}
-              activeDocId={activeDocId}
-              onSelectDoc={(id) => {
-                setActiveDocId(id);
-                if (roomCode) localStorage.setItem(`vaultroom_doc_${roomCode}`, id);
-              }}
-              onCreateDoc={handleCreateDocument}
-              onDeleteDoc={handleDeleteDocument}
-              sources={sources}
-              onAddTextSource={handleAddTextSource}
-              onAddUrlSource={handleAddUrlSource}
-              onUploadSource={handleUploadSource}
-              onDeleteSource={handleDeleteSource}
-              onOpenSourcePreview={(source) => {
-                setPreviewSource(source);
-                setShowPreviewModal(true);
-              }}
-              secrets={secrets}
-              onAddSecret={handleAddSecret}
-              onRevealSecret={handleRevealSecret}
-              onDeleteSecret={handleDeleteSecret}
-            />
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          <div className="flex-1 flex overflow-hidden relative">
+            {/* Left Sidebar (Desktop Inline / Mobile Drawer Overlay) */}
+            {!isLeftCollapsed && (
+              isMobile ? (
+                <div className="fixed inset-0 z-40 flex">
+                  <div
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+                    onClick={handleToggleLeftSidebar}
+                  />
+                  <div className="relative z-50 h-full max-w-[85vw] shadow-2xl">
+                    <Sidebar
+                      width={Math.min(leftWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : 300)}
+                      isCollapsed={isLeftCollapsed}
+                      onToggleCollapse={handleToggleLeftSidebar}
+                      roomCode={roomCode}
+                      documents={documents}
+                      activeDocId={activeDocId}
+                      onSelectDoc={(id) => {
+                        setActiveDocId(id);
+                        if (roomCode) localStorage.setItem(`vaultroom_doc_${roomCode}`, id);
+                        handleToggleLeftSidebar();
+                      }}
+                      onCreateDoc={handleCreateDocument}
+                      onDeleteDoc={handleDeleteDocument}
+                      sources={sources}
+                      onAddTextSource={handleAddTextSource}
+                      onAddUrlSource={handleAddUrlSource}
+                      onUploadSource={handleUploadSource}
+                      onDeleteSource={handleDeleteSource}
+                      onOpenSourcePreview={(source) => {
+                        setPreviewSource(source);
+                        setShowPreviewModal(true);
+                      }}
+                      secrets={secrets}
+                      onAddSecret={handleAddSecret}
+                      onRevealSecret={handleRevealSecret}
+                      onDeleteSecret={handleDeleteSecret}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Sidebar
+                    width={leftWidth}
+                    isCollapsed={isLeftCollapsed}
+                    onToggleCollapse={handleToggleLeftSidebar}
+                    roomCode={roomCode}
+                    documents={documents}
+                    activeDocId={activeDocId}
+                    onSelectDoc={(id) => {
+                      setActiveDocId(id);
+                      if (roomCode) localStorage.setItem(`vaultroom_doc_${roomCode}`, id);
+                    }}
+                    onCreateDoc={handleCreateDocument}
+                    onDeleteDoc={handleDeleteDocument}
+                    sources={sources}
+                    onAddTextSource={handleAddTextSource}
+                    onAddUrlSource={handleAddUrlSource}
+                    onUploadSource={handleUploadSource}
+                    onDeleteSource={handleDeleteSource}
+                    onOpenSourcePreview={(source) => {
+                      setPreviewSource(source);
+                      setShowPreviewModal(true);
+                    }}
+                    secrets={secrets}
+                    onAddSecret={handleAddSecret}
+                    onRevealSecret={handleRevealSecret}
+                    onDeleteSecret={handleDeleteSecret}
+                  />
+                  <ResizeDivider
+                    direction="vertical"
+                    ariaLabel="Left sidebar resizer"
+                    title="Drag to resize left sidebar · Double-click to reset"
+                    onResizeStart={handleStartLeftResize}
+                    onResize={handleLeftResize}
+                    onResizeEnd={handleEndLeftResize}
+                    onReset={handleResetLeft}
+                  />
+                </>
+              )
+            )}
 
             {/* Central Editor Canvas */}
             <EditorView
@@ -862,27 +1035,77 @@ export function App() {
               connectionState={connectionState}
             />
 
-            {/* Right Sidebar */}
-            <RightSidebar
-              roomCode={roomCode}
-              thresholdRequired={thresholdRequired}
-              thresholdTotal={thresholdTotal}
-              maxMembers={maxMembers}
-              members={members}
-              onlineUsers={onlineUsers}
-              currentUserRole={currentUserRole}
-              currentUserId={user?.id}
-              approvals={approvals}
-              onVoteApproval={handleVoteApproval}
-              onUpdateRole={handleUpdateRole}
-              onRequestKickMember={(m) => {
-                setMemberToKick(m);
-                setShowKickModal(true);
-              }}
-              onOpenSettings={() => setShowRoomSettingsModal(true)}
-              onStartHeist={() => setShowHeistModal(true)}
-              onEvaluateAnomaly={(metrics) => api.evaluateAnomaly(roomCode, metrics)}
-            />
+            {/* Right Sidebar (Desktop Inline / Mobile Drawer Overlay) */}
+            {!isRightCollapsed && (
+              isMobile ? (
+                <div className="fixed inset-0 z-40 flex justify-end">
+                  <div
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+                    onClick={handleToggleRightSidebar}
+                  />
+                  <div className="relative z-50 h-full max-w-[85vw] shadow-2xl">
+                    <RightSidebar
+                      width={Math.min(rightWidth, typeof window !== 'undefined' ? window.innerWidth * 0.85 : 320)}
+                      isCollapsed={isRightCollapsed}
+                      onToggleCollapse={handleToggleRightSidebar}
+                      roomCode={roomCode}
+                      thresholdRequired={thresholdRequired}
+                      thresholdTotal={thresholdTotal}
+                      maxMembers={maxMembers}
+                      members={members}
+                      onlineUsers={onlineUsers}
+                      currentUserRole={currentUserRole}
+                      currentUserId={user?.id}
+                      approvals={approvals}
+                      onVoteApproval={handleVoteApproval}
+                      onUpdateRole={handleUpdateRole}
+                      onRequestKickMember={(m) => {
+                        setMemberToKick(m);
+                        setShowKickModal(true);
+                      }}
+                      onOpenSettings={() => setShowRoomSettingsModal(true)}
+                      onStartHeist={() => setShowHeistModal(true)}
+                      onEvaluateAnomaly={(metrics) => api.evaluateAnomaly(roomCode, metrics)}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <ResizeDivider
+                    direction="vertical"
+                    ariaLabel="Right sidebar resizer"
+                    title="Drag to resize right sidebar · Double-click to reset"
+                    onResizeStart={handleStartRightResize}
+                    onResize={handleRightResize}
+                    onResizeEnd={handleEndRightResize}
+                    onReset={handleResetRight}
+                  />
+                  <RightSidebar
+                    width={rightWidth}
+                    isCollapsed={isRightCollapsed}
+                    onToggleCollapse={handleToggleRightSidebar}
+                    roomCode={roomCode}
+                    thresholdRequired={thresholdRequired}
+                    thresholdTotal={thresholdTotal}
+                    maxMembers={maxMembers}
+                    members={members}
+                    onlineUsers={onlineUsers}
+                    currentUserRole={currentUserRole}
+                    currentUserId={user?.id}
+                    approvals={approvals}
+                    onVoteApproval={handleVoteApproval}
+                    onUpdateRole={handleUpdateRole}
+                    onRequestKickMember={(m) => {
+                      setMemberToKick(m);
+                      setShowKickModal(true);
+                    }}
+                    onOpenSettings={() => setShowRoomSettingsModal(true)}
+                    onStartHeist={() => setShowHeistModal(true)}
+                    onEvaluateAnomaly={(metrics) => api.evaluateAnomaly(roomCode, metrics)}
+                  />
+                </>
+              )
+            )}
           </div>
 
           {/* Collapsible Terminal Audit Feed */}

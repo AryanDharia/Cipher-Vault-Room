@@ -546,7 +546,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   if (!doc) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#0a0b10] text-slate-500 p-8">
+      <div className="flex-1 flex flex-col items-center justify-center h-full min-w-0 bg-[#0a0b10] text-slate-500 p-8 select-none">
         <FileCode className="w-12 h-12 text-[#1c2235] mb-3" />
         <p className="text-sm font-mono">No document selected</p>
         <p className="text-xs text-slate-600 mt-1">Select an existing document from the left panel or create a new file.</p>
@@ -555,7 +555,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   }
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] bg-[#0a0b10] overflow-hidden">
+    <div className="flex-1 flex flex-col h-full min-w-0 bg-[#0a0b10] overflow-hidden">
       {/* Document Control Header */}
       <div className="h-11 px-4 border-b border-[#212638] bg-[#0c0e16] flex items-center justify-between select-none">
         <div className="flex items-center space-x-3">

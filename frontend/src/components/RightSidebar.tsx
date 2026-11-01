@@ -35,6 +35,9 @@ interface RightSidebarProps {
   onOpenSettings?: () => void;
   onStartHeist: () => void;
   onEvaluateAnomaly: (metrics: any) => Promise<any>;
+  width?: number;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -53,6 +56,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   onOpenSettings,
   onStartHeist,
   onEvaluateAnomaly,
+  width,
+  isCollapsed,
+  onToggleCollapse,
 }) => {
   const [activeTab, setActiveTab] = useState<'approvals' | 'members' | 'guard'>('approvals');
 
@@ -117,7 +123,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   const participantList = Array.from(participantMap.values());
 
   return (
-    <aside className="w-80 border-l border-[#212638] bg-[#0d0f17] flex flex-col h-[calc(100vh-3.5rem)] select-none">
+    <aside
+      style={width !== undefined ? { width: `${width}px`, minWidth: `${width}px` } : undefined}
+      className={`border-l border-[#212638] bg-[#0d0f17] flex flex-col h-full select-none shrink-0 overflow-hidden ${
+        width !== undefined ? '' : 'w-80'
+      }`}
+    >
       {/* Tab Navigation */}
       <div className="flex border-b border-[#212638] bg-[#0c0e15]">
         <button

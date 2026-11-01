@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Shield, Lock, Unlock, Copy, Check, LogOut, Trash2, User, ChevronDown } from 'lucide-react';
+import { Shield, Lock, Unlock, Copy, Check, LogOut, Trash2, User, ChevronDown, PanelLeft, PanelRight } from 'lucide-react';
 import { ConnectionState } from '../lib/websocket';
 
 interface NavbarProps {
@@ -18,6 +18,10 @@ interface NavbarProps {
   onOpenDeleteAccount?: () => void;
   activeRightTab?: string;
   setActiveRightTab?: (tab: string) => void;
+  isLeftCollapsed?: boolean;
+  onToggleLeftSidebar?: () => void;
+  isRightCollapsed?: boolean;
+  onToggleRightSidebar?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -34,6 +38,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleLock,
   onDeleteRoom,
   onOpenDeleteAccount,
+  isLeftCollapsed = false,
+  onToggleLeftSidebar,
+  isRightCollapsed = false,
+  onToggleRightSidebar,
 }) => {
   const [copied, setCopied] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -76,6 +84,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Left Sidebar Toggle */}
+        {roomCode && onToggleLeftSidebar && (
+          <button
+            type="button"
+            onClick={onToggleLeftSidebar}
+            title={isLeftCollapsed ? 'Expand Files & Sources Sidebar (Ctrl+B)' : 'Collapse Files Sidebar (Ctrl+B)'}
+            className={`p-1.5 rounded border transition-colors ${
+              !isLeftCollapsed
+                ? 'bg-[#161a29] border-cyan-800/60 text-cyan-400'
+                : 'bg-[#121520] border-[#212638] text-slate-400 hover:text-slate-200 hover:border-cyan-700/50'
+            }`}
+          >
+            <PanelLeft className="w-4 h-4" />
+          </button>
+        )}
 
         {roomCode && (
           <div className="hidden sm:flex items-center space-x-3 pl-4 border-l border-[#212638]">
@@ -174,6 +198,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             {isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+          </button>
+        )}
+
+        {/* Right Sidebar (Quorum / Guard) Toggle */}
+        {roomCode && onToggleRightSidebar && (
+          <button
+            type="button"
+            onClick={onToggleRightSidebar}
+            title={isRightCollapsed ? 'Expand Quorum & AI Guard Sidebar' : 'Collapse Quorum Sidebar'}
+            className={`p-1.5 rounded border transition-colors ${
+              !isRightCollapsed
+                ? 'bg-[#161a29] border-cyan-800/60 text-cyan-400'
+                : 'bg-[#121520] border-[#212638] text-slate-400 hover:text-slate-200 hover:border-cyan-700/50'
+            }`}
+          >
+            <PanelRight className="w-4 h-4" />
           </button>
         )}
 

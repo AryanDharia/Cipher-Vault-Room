@@ -1,0 +1,675 @@
+.vr-auth {
+  --vr-cyan: #36d5df;
+  --vr-teal: #39c8b1;
+  --vr-ink: #090d12;
+  --vr-panel: #10171e;
+  --vr-line: rgba(185, 210, 220, 0.12);
+  --vr-muted: #91a1ac;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vw, 48px);
+  background:
+    radial-gradient(ellipse at 17% 8%, rgba(29, 104, 112, 0.19), transparent 35%),
+    radial-gradient(ellipse at 91% 92%, rgba(20, 108, 98, 0.12), transparent 32%),
+    var(--vr-ink);
+  color: #edf4f5;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.vr-auth *,
+.vr-auth *::before,
+.vr-auth *::after {
+  box-sizing: border-box;
+}
+
+.vr-auth__ambient {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.vr-auth__grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.14;
+  background-image:
+    linear-gradient(rgba(117, 192, 192, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(117, 192, 192, 0.08) 1px, transparent 1px);
+  background-size: 54px 54px;
+  mask-image: radial-gradient(ellipse at 50% 44%, #000 8%, transparent 78%);
+}
+
+.vr-auth__orb {
+  position: absolute;
+  width: min(42vw, 520px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.15;
+  animation: vr-auth-drift 18s ease-in-out infinite alternate;
+}
+
+.vr-auth__orb--cyan {
+  top: -35%;
+  left: -16%;
+  background: #0abcc9;
+}
+
+.vr-auth__orb--teal {
+  right: -21%;
+  bottom: -48%;
+  background: #159c82;
+  animation-delay: -8s;
+}
+
+.vr-auth__layout {
+  width: min(100%, 1080px);
+  min-height: min(690px, calc(100dvh - 80px));
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(390px, 0.92fr);
+  overflow: hidden;
+  border: 1px solid rgba(190, 218, 224, 0.15);
+  border-radius: 25px;
+  background: rgba(14, 20, 25, 0.84);
+  box-shadow: 0 34px 100px rgba(0, 0, 0, 0.48), 0 1px rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(18px);
+  animation: vr-auth-rise 650ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.vr-auth__story {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(35px, 5vw, 62px);
+  overflow: hidden;
+  background:
+    linear-gradient(148deg, rgba(20, 76, 80, 0.46), transparent 48%),
+    linear-gradient(32deg, rgba(10, 16, 21, 0.45), rgba(17, 27, 34, 0.88));
+}
+
+.vr-auth__story::after {
+  content: "";
+  position: absolute;
+  right: -115px;
+  bottom: 17%;
+  width: 330px;
+  height: 330px;
+  border: 1px solid rgba(61, 206, 194, 0.15);
+  border-radius: 50%;
+  box-shadow: 0 0 0 34px rgba(61, 206, 194, 0.025), 0 0 0 70px rgba(61, 206, 194, 0.02);
+  pointer-events: none;
+}
+
+.vr-auth__brand {
+  position: relative;
+  z-index: 1;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: #f2f7f7;
+  text-decoration: none;
+}
+
+.vr-auth__brand-mark {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(54, 213, 223, 0.48);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(54, 213, 223, 0.18), rgba(57, 200, 177, 0.04));
+  box-shadow: 0 0 26px rgba(45, 196, 190, 0.12), 0 1px rgba(255, 255, 255, 0.14) inset;
+  color: var(--vr-cyan);
+  font-size: 21px;
+  font-weight: 750;
+  letter-spacing: -0.08em;
+}
+
+.vr-auth__brand-name {
+  font-size: 14px;
+  font-weight: 760;
+  letter-spacing: 0.19em;
+}
+
+.vr-auth__brand-name span {
+  color: #9db2b7;
+  font-weight: 520;
+}
+
+.vr-auth__story-copy {
+  position: relative;
+  z-index: 1;
+  margin: auto 0;
+  padding: 55px 0 47px;
+}
+
+.vr-auth__kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 21px;
+  color: #9bb3b7;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.19em;
+}
+
+.vr-auth__kicker > span,
+.vr-auth__notice > span {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--vr-teal);
+  box-shadow: 0 0 13px rgba(57, 200, 177, 0.8);
+}
+
+.vr-auth__story h1 {
+  max-width: 560px;
+  margin: 0;
+  color: #f0f6f6;
+  font-size: clamp(42px, 5.7vw, 67px);
+  font-weight: 550;
+  letter-spacing: -0.065em;
+  line-height: 1.04;
+}
+
+.vr-auth__story h1 em {
+  color: var(--vr-cyan);
+  font-style: normal;
+  font-weight: 450;
+}
+
+.vr-auth__lede {
+  max-width: 380px;
+  margin: 24px 0 0;
+  color: #a3b2b8;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.vr-auth__highlights {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 15px;
+  margin: 0;
+  padding: 0;
+  color: #bdc9cc;
+  font-size: 12px;
+  list-style: none;
+}
+
+.vr-auth__highlights li {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.vr-auth__highlights li > span {
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(57, 200, 177, 0.25);
+  border-radius: 50%;
+  color: var(--vr-teal);
+}
+
+.vr-auth__story-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 43px;
+  color: #799096;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+}
+
+.vr-auth__story-foot svg {
+  color: var(--vr-teal);
+}
+
+.vr-auth__panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(30px, 4.6vw, 54px);
+  background: linear-gradient(150deg, rgba(17, 24, 30, 0.98), rgba(12, 17, 22, 0.97));
+}
+
+.vr-auth__panel-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: clamp(38px, 6vh, 64px);
+}
+
+.vr-auth__secure-mark,
+.vr-auth__panel-index {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #90a2aa;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.15em;
+}
+
+.vr-auth__secure-mark svg {
+  color: var(--vr-teal);
+}
+
+.vr-auth__panel-index {
+  gap: 7px;
+  color: #60727b;
+  font-size: 8px;
+}
+
+.vr-auth__panel-index i {
+  width: 18px;
+  height: 1px;
+  background: #52636a;
+}
+
+.vr-auth__heading {
+  animation: vr-auth-content-in 260ms ease both;
+}
+
+.vr-auth__heading > p {
+  margin: 0 0 12px;
+  color: var(--vr-teal);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+}
+
+.vr-auth__heading h2 {
+  margin: 0;
+  color: #edf4f5;
+  font-size: clamp(27px, 3vw, 34px);
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  line-height: 1.16;
+}
+
+.vr-auth__heading > span {
+  display: block;
+  margin-top: 10px;
+  color: var(--vr-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.vr-auth__notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 11px 12px;
+  border: 1px solid rgba(57, 200, 177, 0.19);
+  border-radius: 9px;
+  background: rgba(27, 116, 98, 0.11);
+  color: #b8ddd5;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.vr-auth__tabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 31px 0 27px;
+  border-bottom: 1px solid var(--vr-line);
+}
+
+.vr-auth__tabs button {
+  min-height: 45px;
+  border: 0;
+  background: transparent;
+  color: #819098;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  transition: color 180ms ease;
+}
+
+.vr-auth__tabs button:hover:not(:disabled),
+.vr-auth__tabs button.is-active {
+  color: var(--vr-cyan);
+}
+
+.vr-auth__tabs button:focus-visible,
+.vr-auth__submit:focus-visible {
+  outline: 2px solid var(--vr-cyan);
+  outline-offset: 4px;
+}
+
+.vr-auth__tabs button:disabled {
+  cursor: wait;
+}
+
+.vr-auth__tab-indicator {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 50%;
+  height: 2px;
+  background: linear-gradient(90deg, var(--vr-cyan), var(--vr-teal));
+  box-shadow: 0 0 12px rgba(54, 213, 223, 0.5);
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.vr-auth__tab-indicator.is-right {
+  transform: translateX(100%);
+}
+
+.vr-auth__form-wrap {
+  animation: vr-auth-content-in 300ms ease both;
+}
+
+.vr-auth__form-wrap form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.vr-auth__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vr-auth__field label {
+  color: #bdc9cd;
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.vr-auth__input-wrap {
+  min-height: 49px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 13px;
+  border: 1px solid rgba(166, 193, 201, 0.16);
+  border-radius: 9px;
+  background: rgba(6, 11, 15, 0.64);
+  color: #71868e;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.vr-auth__input-wrap:focus-within {
+  border-color: rgba(54, 213, 223, 0.7);
+  background: rgba(7, 14, 19, 0.92);
+  box-shadow: 0 0 0 3px rgba(54, 213, 223, 0.1), 0 0 22px rgba(54, 213, 223, 0.06);
+  color: var(--vr-cyan);
+}
+
+.vr-auth__input-wrap input {
+  width: 100%;
+  min-width: 0;
+  padding: 13px 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #edf4f5;
+  font: inherit;
+  font-size: 12px;
+}
+
+.vr-auth__input-wrap input::placeholder {
+  color: #5f7077;
+  opacity: 1;
+}
+
+.vr-auth__input-wrap input:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.vr-auth__hint {
+  color: #74868d;
+  font-size: 10px;
+}
+
+.vr-auth__error {
+  margin-top: -3px;
+  padding: 11px 12px;
+  border: 1px solid rgba(244, 111, 121, 0.27);
+  border-radius: 8px;
+  background: rgba(137, 43, 54, 0.13);
+  color: #ff9ca3;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.vr-auth__submit {
+  min-height: 49px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  margin-top: 3px;
+  border: 1px solid rgba(104, 232, 226, 0.44);
+  border-radius: 9px;
+  background: linear-gradient(105deg, #35c9d2, #49d6bd);
+  box-shadow: 0 9px 25px rgba(28, 159, 159, 0.17), 0 1px rgba(255, 255, 255, 0.36) inset;
+  color: #062022;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 760;
+  transition: transform 180ms ease, filter 180ms ease, box-shadow 180ms ease;
+}
+
+.vr-auth__submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: 0 12px 30px rgba(28, 159, 159, 0.24), 0 1px rgba(255, 255, 255, 0.4) inset;
+}
+
+.vr-auth__submit:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.vr-auth__submit:disabled {
+  cursor: wait;
+  filter: saturate(0.72);
+  opacity: 0.72;
+}
+
+.vr-auth__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(6, 32, 34, 0.28);
+  border-top-color: #062022;
+  border-radius: 50%;
+  animation: vr-auth-spin 700ms linear infinite;
+}
+
+.vr-auth__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 29px;
+  color: #6f8288;
+  font-size: 8px;
+  font-weight: 680;
+  letter-spacing: 0.09em;
+}
+
+.vr-auth__footer > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #91a5a9;
+  letter-spacing: 0;
+}
+
+.vr-auth__footer svg {
+  color: var(--vr-teal);
+}
+
+.vr-auth__footer b {
+  color: var(--vr-teal);
+}
+
+@keyframes vr-auth-rise {
+  from { opacity: 0; transform: translateY(13px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes vr-auth-content-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes vr-auth-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(34px, 22px, 0); }
+}
+
+@keyframes vr-auth-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 820px) {
+  .vr-auth__layout {
+    width: min(100%, 510px);
+    min-height: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vr-auth__story {
+    padding: 25px 30px 14px;
+    background: transparent;
+  }
+
+  .vr-auth__story::after,
+  .vr-auth__highlights,
+  .vr-auth__story-foot {
+    display: none;
+  }
+
+  .vr-auth__story-copy {
+    margin: 26px 0 0;
+    padding: 0;
+  }
+
+  .vr-auth__kicker {
+    margin-bottom: 10px;
+    font-size: 9px;
+  }
+
+  .vr-auth__story h1 {
+    font-size: clamp(29px, 8vw, 42px);
+  }
+
+  .vr-auth__story h1 br {
+    display: none;
+  }
+
+  .vr-auth__lede {
+    display: none;
+  }
+
+  .vr-auth__panel {
+    padding: 24px 30px 30px;
+    background: transparent;
+  }
+
+  .vr-auth__panel-top {
+    margin-bottom: 27px;
+  }
+
+  .vr-auth__tabs {
+    margin-top: 24px;
+  }
+
+  .vr-auth__footer {
+    margin-top: 25px;
+    padding-top: 21px;
+  }
+}
+
+@media (max-width: 430px) {
+  .vr-auth {
+    padding: 12px;
+    place-items: start center;
+  }
+
+  .vr-auth__layout {
+    margin: auto 0;
+    border-radius: 18px;
+  }
+
+  .vr-auth__story {
+    padding: 21px 21px 10px;
+  }
+
+  .vr-auth__panel {
+    padding: 18px 21px 22px;
+  }
+
+  .vr-auth__panel-top {
+    margin-bottom: 24px;
+  }
+
+  .vr-auth__heading h2 {
+    font-size: 27px;
+  }
+
+  .vr-auth__footer {
+    font-size: 7px;
+  }
+}
+
+@media (max-height: 700px) and (min-width: 821px) {
+  .vr-auth__layout {
+    min-height: min(610px, calc(100dvh - 36px));
+  }
+
+  .vr-auth__story {
+    padding-top: 34px;
+    padding-bottom: 34px;
+  }
+
+  .vr-auth__story-copy {
+    padding: 30px 0;
+  }
+
+  .vr-auth__story-foot {
+    margin-top: 24px;
+  }
+
+  .vr-auth__panel-top {
+    margin-bottom: 34px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vr-auth *,
+  .vr-auth *::before,
+  .vr-auth *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
