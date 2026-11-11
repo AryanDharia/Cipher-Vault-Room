@@ -1,10 +1,11 @@
 import json
 import io
+import time
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -17,6 +18,22 @@ router = APIRouter(prefix="/rooms/{code}/sources", tags=["Source Library"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB maximum
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".json", ".csv"}
+
+# Bounded in-memory idempotency cache for retried/double-submitted file uploads:
+# key: (room_id, user_id, upload_id) -> (expires_at, source_payload)
+_RECENT_UPLOAD_TTL_SECONDS = 120.0
+_MAX_RECENT_UPLOADS = 500
+_recent_upload_cache: Dict[Tuple[str, str, str], Tuple[float, Dict[str, Any]]] = {}
+
+
+def _prune_upload_cache(now: float) -> None:
+    expired = [k for k, (exp, _) in _recent_upload_cache.items() if exp <= now]
+    for k in expired:
+        _recent_upload_cache.pop(k, None)
+    if len(_recent_upload_cache) > _MAX_RECENT_UPLOADS:
+        oldest = sorted(_recent_upload_cache.items(), key=lambda item: item[1][0])
+        for k, _ in oldest[:len(oldest) // 2]:
+            _recent_upload_cache.pop(k, None)
 
 def get_mime_type(ext: str) -> str:
     mimes = {
@@ -127,14 +144,7 @@ async def add_text_source(
     await db.commit()
     await db.refresh(source)
 
-    await manager.broadcast(room.code, {
-        "type": "SOURCE_ADDED",
-        "source_id": source.id,
-        "title": source.title,
-        "source_type": source.source_type
-    })
-
-    return {
+    source_payload = {
         "id": source.id,
         "title": source.title,
         "source_type": source.source_type,
@@ -143,6 +153,16 @@ async def add_text_source(
         "tags": req.tags or [],
         "created_at": source.created_at.isoformat()
     }
+
+    await manager.broadcast(room.code, {
+        "type": "SOURCE_ADDED",
+        "source_id": source.id,
+        "source": source_payload,
+        "title": source.title,
+        "source_type": source.source_type
+    })
+
+    return source_payload
 
 @router.post("/url", status_code=status.HTTP_201_CREATED)
 async def add_url_source(
@@ -201,7 +221,7 @@ async def add_url_source(
     await db.commit()
     await db.refresh(source)
 
-    return {
+    source_payload = {
         "id": source.id,
         "title": source.title,
         "source_type": "url",
@@ -212,17 +232,36 @@ async def add_url_source(
         "created_at": source.created_at.isoformat()
     }
 
+    await manager.broadcast(room.code, {
+        "type": "SOURCE_ADDED",
+        "source_id": source.id,
+        "source": source_payload,
+        "title": source.title,
+        "source_type": "url"
+    })
+
+    return source_payload
+
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_file_source(
     code: str,
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
+    upload_id: Optional[str] = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     room, member = await get_room_and_membership(code, user, db)
     if member.role == "viewer":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viewers cannot upload files")
+
+    clean_upload_id = upload_id.strip() if upload_id and upload_id.strip() else None
+    if clean_upload_id:
+        now = time.monotonic()
+        _prune_upload_cache(now)
+        cached = _recent_upload_cache.get((room.id, user.id, clean_upload_id))
+        if cached and cached[0] > now:
+            return cached[1]
 
     filename = file.filename or "uploaded-file"
     ext = "." + filename.split(".")[-1].lower() if "." in filename else ""
@@ -297,8 +336,17 @@ async def upload_file_source(
     # Broadcast source addition to room WebSocket clients
     await manager.broadcast(room.code, {
         "type": "SOURCE_ADDED",
+        "source_id": source.id,
         "source": source_payload
     })
+
+    if clean_upload_id:
+        now = time.monotonic()
+        _prune_upload_cache(now)
+        _recent_upload_cache[(room.id, user.id, clean_upload_id)] = (
+            now + _RECENT_UPLOAD_TTL_SECONDS,
+            source_payload,
+        )
 
     return source_payload
 

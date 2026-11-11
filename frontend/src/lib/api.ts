@@ -292,10 +292,11 @@ class ApiClient {
     });
   }
 
-  async uploadFileSource(code: string, file: File, title?: string) {
+  async uploadFileSource(code: string, file: File, title?: string, uploadId?: string) {
     const formData = new FormData();
     formData.append('file', file);
     if (title) formData.append('title', title);
+    if (uploadId) formData.append('upload_id', uploadId);
     return this.request<any>(`/rooms/${code}/sources/upload`, {
       method: 'POST',
       body: formData,

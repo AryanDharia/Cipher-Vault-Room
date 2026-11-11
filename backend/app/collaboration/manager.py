@@ -254,13 +254,14 @@ class RoomConnectionManager:
 
             # 2. Presence and Awareness (cursor positions, text selections)
             elif msg_type in ("CURSOR_UPDATE", "SELECTION_UPDATE"):
-                user_id = data.get("user_id") or client.get("user_id")
+                user_id = client.get("user_id") or data.get("user_id")
+                username = client.get("username") or data.get("username")
                 if user_id:
                     room_pres = self.room_presence.setdefault(code, {})
                     room_pres[user_id] = {
                         "user_id": user_id,
                         "socket_id": socket_id,
-                        "username": data.get("username", client.get("username")),
+                        "username": username,
                         "color": data.get("color"),
                         "cursor": data.get("cursor"),
                         "selection": data.get("selection"),
@@ -269,9 +270,10 @@ class RoomConnectionManager:
 
                 await self.broadcast(code, {
                     "type": msg_type,
+                    "room_code": code,
                     "sender_socket_id": socket_id,
                     "user_id": user_id,
-                    "username": data.get("username", client.get("username")),
+                    "username": username,
                     "color": data.get("color"),
                     "cursor": data.get("cursor"),
                     "selection": data.get("selection")

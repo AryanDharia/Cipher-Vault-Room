@@ -14,6 +14,7 @@ import { api } from './lib/api';
 import { VaultWebSocket, ConnectionState, RoomUser } from './lib/websocket';
 import { encryptEnvelope, decryptEnvelope, deriveRoomKey } from './lib/crypto';
 import { secureStorage } from './lib/secureStorage';
+import { upsertSource, dedupeSources, removeSourceById } from './lib/sourceList';
 
 export function App() {
   // Authentication & User State
@@ -55,6 +56,8 @@ export function App() {
   const [showRoomSettingsModal, setShowRoomSettingsModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewSource, setPreviewSource] = useState<any | null>(null);
+  const [isUploadingSource, setIsUploadingSource] = useState(false);
+  const uploadingSourceLockRef = useRef(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [bannerNotification, setBannerNotification] = useState<string | null>(null);
   const [activeRightTab, setActiveRightTab] = useState<string>('approvals');
@@ -232,6 +235,9 @@ export function App() {
 
     ws.onStateChange((state) => {
       setConnectionState(state);
+      if (state !== 'connected') {
+        setLatestPresence(null);
+      }
     });
 
     // Listen to real-time broadcasts
@@ -256,6 +262,11 @@ export function App() {
 
     ws.on('USER_LEFT', (data) => {
       if (data.online_users) setOnlineUsers(data.online_users);
+      setLatestPresence((prev: any) =>
+        prev && ((data.user_id && prev.user_id === data.user_id) || (data.username && prev.username === data.username))
+          ? null
+          : prev
+      );
       refreshMembers();
       addAuditEvent({
         id: `ev-${Date.now()}`,
@@ -266,15 +277,6 @@ export function App() {
         details: {},
         is_simulated: false,
       });
-    });
-
-    ws.on('MEMBER_ROLE_UPDATED', (data) => {
-      setMembers((prev) =>
-        prev.map((m) => (m.user_id === data.user_id ? { ...m, role: data.new_role } : m))
-      );
-      if (user && user.id === data.user_id) {
-        setCurrentUserRole(data.new_role);
-      }
     });
 
     ws.on('ROOM_LOCK_STATE_CHANGED', (data) => {
@@ -382,6 +384,7 @@ export function App() {
       setActiveDocId(null);
       setMembers([]);
       setOnlineUsers([]);
+      setLatestPresence(null);
       setBannerNotification(data.message || 'You have been removed from this room by the host.');
     });
 
@@ -400,8 +403,13 @@ export function App() {
         setActiveDocId(null);
         setMembers([]);
         setOnlineUsers([]);
+        setLatestPresence(null);
         setBannerNotification(data.reason || 'You have been removed from this room by the host.');
       } else {
+        setOnlineUsers((prev) => prev.filter((u) => u.user_id !== data.user_id));
+        setLatestPresence((prev: any) =>
+          prev && (prev.user_id === data.user_id || prev.username === data.username) ? null : prev
+        );
         refreshMembers();
         addAuditEvent({
           id: `ev-${Date.now()}`,
@@ -420,6 +428,9 @@ export function App() {
 
     ws.on('MEMBER_ROLE_UPDATED', (data) => {
       console.info('[App] MEMBER_ROLE_UPDATED received:', data);
+      setMembers((prev) =>
+        prev.map((m) => (m.user_id === data.user_id ? { ...m, role: data.new_role } : m))
+      );
       if (user && data.user_id === user.id) {
         setCurrentUserRole(data.new_role);
       }
@@ -446,6 +457,7 @@ export function App() {
       setActiveDocId(null);
       setMembers([]);
       setOnlineUsers([]);
+      setLatestPresence(null);
       setBannerNotification(data.message || 'This room has been permanently deleted by the host.');
     });
 
@@ -455,6 +467,7 @@ export function App() {
       setUser(null);
       setRoomCode(null);
       setRoomKey(null);
+      setLatestPresence(null);
       setBannerNotification(data.message || 'Your account credentials have been revoked.');
     });
 
@@ -471,8 +484,8 @@ export function App() {
     });
 
     ws.on('SOURCE_ADDED', (data) => {
-      if (data && data.source) {
-        setSources((prev) => [data.source, ...prev.filter((s) => s.id !== data.source.id)]);
+      if (data && data.source && data.source.id) {
+        setSources((prev) => upsertSource(prev, data.source));
       } else {
         refreshSources();
       }
@@ -480,7 +493,7 @@ export function App() {
 
     ws.on('SOURCE_REMOVED', (data) => {
       if (data && data.source_id) {
-        setSources((prev) => prev.filter((s) => s.id !== data.source_id));
+        setSources((prev) => removeSourceById(prev, data.source_id));
       } else {
         refreshSources();
       }
@@ -561,7 +574,7 @@ export function App() {
     if (!roomCode) return;
     try {
       const s = await api.listSources(roomCode);
-      setSources(s);
+      setSources(dedupeSources(Array.isArray(s) ? s : []));
     } catch {}
   };
 
@@ -605,6 +618,7 @@ export function App() {
       setAuditEvents([]);
       setRemoteDeltas([]);
       setLatestDelta(null);
+      setLatestPresence(null);
       setHasUnsavedChanges(false);
     }
     setRoomCode(code);
@@ -711,7 +725,7 @@ export function App() {
     if (!roomCode) return;
     try {
       const s = await api.addTextSource(roomCode, { title, content, source_type: sourceType });
-      setSources((prev) => [s, ...prev]);
+      setSources((prev) => upsertSource(prev, s));
     } catch (err: any) {
       alert(`Error adding source: ${err.message}`);
     }
@@ -721,19 +735,28 @@ export function App() {
     if (!roomCode) return;
     try {
       const s = await api.addUrlSource(roomCode, { title, url });
-      setSources((prev) => [s, ...prev]);
+      setSources((prev) => upsertSource(prev, s));
     } catch (err: any) {
       alert(`Error adding URL source: ${err.message}`);
     }
   };
 
   const handleUploadSource = async (file: File) => {
-    if (!roomCode) return;
+    if (!roomCode || uploadingSourceLockRef.current) return;
+    uploadingSourceLockRef.current = true;
+    setIsUploadingSource(true);
+    const uploadId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     try {
-      const s = await api.uploadFileSource(roomCode, file);
-      setSources((prev) => [s, ...prev]);
+      const s = await api.uploadFileSource(roomCode, file, undefined, uploadId);
+      setSources((prev) => upsertSource(prev, s));
     } catch (err: any) {
       alert(`Error uploading file: ${err.message}`);
+    } finally {
+      uploadingSourceLockRef.current = false;
+      setIsUploadingSource(false);
     }
   };
 
@@ -741,7 +764,7 @@ export function App() {
     if (!roomCode) return;
     try {
       await api.deleteSource(roomCode, sourceId);
-      setSources((prev) => prev.filter((s) => s.id !== sourceId));
+      setSources((prev) => removeSourceById(prev, sourceId));
     } catch (err: any) {
       alert(`Error deleting source: ${err.message}`);
     }
@@ -852,6 +875,7 @@ export function App() {
     setDocuments([]);
     setMembers([]);
     setOnlineUsers([]);
+    setLatestPresence(null);
     setShowSignOutModal(false);
     setHasUnsavedChanges(false);
   };
@@ -870,6 +894,7 @@ export function App() {
     setActiveDocId(null);
     setMembers([]);
     setOnlineUsers([]);
+    setLatestPresence(null);
     setShowDeleteRoomModal(false);
     setBannerNotification(`Room ${currentCode} and all its documents were permanently deleted.`);
   };
@@ -889,6 +914,7 @@ export function App() {
     setDocuments([]);
     setMembers([]);
     setOnlineUsers([]);
+    setLatestPresence(null);
     setShowDeleteAccountModal(false);
     setBannerNotification('Your account and all associated rooms have been permanently deleted.');
   };
@@ -935,6 +961,7 @@ export function App() {
           setDocuments([]);
           setMembers([]);
           setOnlineUsers([]);
+          setLatestPresence(null);
         }}
         onLogout={() => setShowSignOutModal(true)}
         onDeleteRoom={() => setShowDeleteRoomModal(true)}
@@ -970,6 +997,7 @@ export function App() {
                       documents={documents}
                       activeDocId={activeDocId}
                       onSelectDoc={(id) => {
+                        setLatestPresence(null);
                         setActiveDocId(id);
                         if (roomCode) localStorage.setItem(`vaultroom_doc_${roomCode}`, id);
                         handleToggleLeftSidebar();
@@ -980,6 +1008,7 @@ export function App() {
                       onAddTextSource={handleAddTextSource}
                       onAddUrlSource={handleAddUrlSource}
                       onUploadSource={handleUploadSource}
+                      uploadingSource={isUploadingSource}
                       onDeleteSource={handleDeleteSource}
                       onOpenSourcePreview={(source) => {
                         setPreviewSource(source);
@@ -1002,6 +1031,7 @@ export function App() {
                     documents={documents}
                     activeDocId={activeDocId}
                     onSelectDoc={(id) => {
+                      setLatestPresence(null);
                       setActiveDocId(id);
                       if (roomCode) localStorage.setItem(`vaultroom_doc_${roomCode}`, id);
                     }}
@@ -1011,6 +1041,7 @@ export function App() {
                     onAddTextSource={handleAddTextSource}
                     onAddUrlSource={handleAddUrlSource}
                     onUploadSource={handleUploadSource}
+                    uploadingSource={isUploadingSource}
                     onDeleteSource={handleDeleteSource}
                     onOpenSourcePreview={(source) => {
                       setPreviewSource(source);
@@ -1042,7 +1073,9 @@ export function App() {
               roomKey={roomKey}
               isLocked={isLocked}
               currentUserRole={currentUserRole}
+              currentUserId={user?.id}
               currentUsername={user?.username}
+              onlineUsers={onlineUsers}
               onBroadcastDelta={handleBroadcastDelta}
               onBroadcastPresence={handleBroadcastPresence}
               latestPresence={latestPresence}

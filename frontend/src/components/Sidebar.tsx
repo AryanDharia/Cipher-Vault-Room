@@ -33,6 +33,7 @@ interface SidebarProps {
   onAddTextSource: (title: string, content: string, sourceType: string) => void;
   onAddUrlSource: (title: string, url: string) => void;
   onUploadSource: (file: File) => void;
+  uploadingSource?: boolean;
   onDeleteSource: (sourceId: string) => void;
   onOpenSourcePreview?: (source: any) => void;
   secrets: any[];
@@ -55,6 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onAddTextSource,
   onAddUrlSource,
   onUploadSource,
+  uploadingSource = false,
   onDeleteSource,
   onOpenSourcePreview,
   secrets,
@@ -617,14 +619,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <input
                   type="file"
                   accept=".pdf,.docx,.txt,.md,.json,.csv"
+                  disabled={uploadingSource}
                   onChange={(e) => {
+                    if (uploadingSource) return;
                     const file = e.target.files?.[0];
+                    e.target.value = '';
                     if (file) {
                       onUploadSource(file);
                       setShowAddSource(false);
                     }
                   }}
-                  className="w-full text-xs text-slate-300 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-slate-900 hover:file:bg-cyan-500"
+                  className="w-full text-xs text-slate-300 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-cyan-600 file:text-slate-900 hover:file:bg-cyan-500 disabled:opacity-50"
                 />
                 <p className="text-[10px] text-slate-500">Supports PDF, Word (.docx), TXT, Markdown, JSON, CSV up to 10MB.</p>
                 <div className="flex justify-end">

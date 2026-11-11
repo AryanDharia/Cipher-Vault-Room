@@ -5,7 +5,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Collaboration from '@tiptap/extension-collaboration';
 import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
-import { prosemirrorJSONToYDoc } from 'y-prosemirror';
+import { prosemirrorJSONToYDoc, ySyncPluginKey } from 'y-prosemirror';
 import {
   Bold,
   Italic,
@@ -23,12 +23,26 @@ import {
   Eye,
   EyeOff,
   FileCode,
-  Sparkles
+  Sparkles,
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { encryptEnvelope, decryptEnvelope } from '../lib/crypto';
 import { api } from '../lib/api';
 import { collaborationOutbox } from '../lib/collaborationOutbox';
 import { synchronizeYDoc } from '../lib/collaborationSync';
+import {
+  applyRemotePresenceToMap,
+  getActiveTypingUsernames,
+  isEditingKeydown,
+  isLocalTipTapUpdate,
+  pruneDisconnectedPresence,
+} from '../lib/presenceTracker';
+import {
+  buildExportArtifact,
+  extractDocumentContent,
+  triggerBlobDownload,
+} from '../lib/documentExport';
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -52,7 +66,9 @@ interface EditorViewProps {
   roomKey: CryptoKey | null;
   isLocked: boolean;
   currentUserRole: string;
+  currentUserId?: string;
   currentUsername?: string;
+  onlineUsers?: Array<{ user_id?: string; username?: string }>;
   onBroadcastDelta: (docId: string, updateId: string, encryptedPayload: string) => Promise<string | null>;
   onBroadcastPresence?: (presence: { isTyping: boolean; docId: string; lastActive: number; username?: string }) => void;
   latestPresence?: any;
@@ -60,15 +76,6 @@ interface EditorViewProps {
   latestDelta?: any;
   remoteDeltas?: any[];
   connectionState?: string;
-}
-
-function hashClientId(str: string): number {
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-    hash = hash & 0x7fffffff;
-  }
-  return hash || 1;
 }
 
 function formatTypingIndicator(users: string[]): string | null {
@@ -84,7 +91,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
   roomKey,
   isLocked,
   currentUserRole,
+  currentUserId,
   currentUsername,
+  onlineUsers,
   onBroadcastDelta,
   onBroadcastPresence,
   latestPresence,
@@ -123,6 +132,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [autoMask, setAutoMask] = useState<boolean>(false);
   const [exporting, setExporting] = useState<boolean>(false);
   const [exportResult, setExportResult] = useState<any | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const [collabDoc, setCollabDoc] = useState<Y.Doc | null>(null);
   const collabDocRef = useRef<Y.Doc | null>(null);
@@ -133,20 +143,39 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const awarenessRef = useRef<Awareness | null>(null);
   const typingTimerRef = useRef<number | null>(null);
   const isTypingRef = useRef<boolean>(false);
+  const lastBroadcastTypingAtRef = useRef<number>(0);
+  const lastProcessedPresenceRef = useRef<any>(null);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
 
+  useEffect(() => {
+    setExportError(null);
+    setExportResult(null);
+  }, [doc?.id]);
+
   const publishTyping = useCallback((isTyping: boolean) => {
-    if (!doc?.id || !currentUsername) return;
-    if (isTypingRef.current === isTyping && !isTyping) return;
-    isTypingRef.current = isTyping;
+    if (!doc?.id || (!currentUsername && !currentUserId)) return;
+    if (!isTyping) {
+      if (!isTypingRef.current) return;
+      isTypingRef.current = false;
+      lastBroadcastTypingAtRef.current = 0;
+    } else {
+      const now = Date.now();
+      if (isTypingRef.current && now - lastBroadcastTypingAtRef.current < 500) {
+        return;
+      }
+      isTypingRef.current = true;
+      lastBroadcastTypingAtRef.current = now;
+    }
 
     const now = Date.now();
     if (awarenessRef.current) {
       awarenessRef.current.setLocalStateField('user', {
-        username: currentUsername,
+        userId: currentUserId,
+        username: currentUsername || 'Collaborator',
         isTyping,
         lastActive: now,
         docId: doc.id,
+        roomCode,
       });
     }
 
@@ -156,10 +185,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
       lastActive: now,
       username: currentUsername,
     });
-  }, [currentUsername, doc?.id, onBroadcastPresence]);
+  }, [currentUserId, currentUsername, doc?.id, roomCode, onBroadcastPresence]);
 
   const handleUserTyping = useCallback(() => {
-    if (isLocked || currentUserRole === 'viewer') return;
+    if (isLocked || currentUserRole === 'viewer' || isDecrypting || !collabDocRef.current) return;
 
     publishTyping(true);
 
@@ -167,12 +196,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
       window.clearTimeout(typingTimerRef.current);
     }
 
-    // Set isTyping to false after ~1.8s of inactivity (satisfying 1.5–2s requirement)
+    // Set isTyping to false after ~1.8s of inactivity (satisfying 1.5-2s requirement)
     typingTimerRef.current = window.setTimeout(() => {
       publishTyping(false);
       typingTimerRef.current = null;
     }, 1800);
-  }, [isLocked, currentUserRole, publishTyping]);
+  }, [isLocked, currentUserRole, isDecrypting, publishTyping]);
 
   const handleEditorBlur = useCallback(() => {
     if (typingTimerRef.current) {
@@ -184,6 +213,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   // Clear typing on document switch or component unmount
   useEffect(() => {
+    lastProcessedPresenceRef.current = null;
+    setTypingUsers([]);
     return () => {
       if (typingTimerRef.current) {
         window.clearTimeout(typingTimerRef.current);
@@ -191,9 +222,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
       }
       publishTyping(false);
     };
-  }, [doc?.id, publishTyping]);
+  }, [doc?.id, roomCode, publishTyping]);
 
-  // Clear typing on disconnect
+  // Clear typing and remote awareness states on disconnect
   useEffect(() => {
     if (connectionState !== 'connected') {
       if (typingTimerRef.current) {
@@ -201,6 +232,20 @@ export const EditorView: React.FC<EditorViewProps> = ({
         typingTimerRef.current = null;
       }
       publishTyping(false);
+      if (awarenessRef.current) {
+        const localClientId = awarenessRef.current.clientID;
+        const staleRemoteIds: number[] = [];
+        awarenessRef.current.states.forEach((_state, cId) => {
+          if (cId !== localClientId) staleRemoteIds.push(cId);
+        });
+        for (const cId of staleRemoteIds) {
+          awarenessRef.current.states.delete(cId);
+        }
+        if (staleRemoteIds.length > 0) {
+          awarenessRef.current.emit('change', [{ added: [], updated: [], removed: staleRemoteIds }, 'disconnect']);
+        }
+      }
+      setTypingUsers([]);
     }
   }, [connectionState, publishTyping]);
 
@@ -220,27 +265,25 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
     // Set initial local state
     awareness.setLocalStateField('user', {
+      userId: currentUserId,
       username: currentUsername || 'Anonymous',
       isTyping: false,
       lastActive: Date.now(),
       docId: doc?.id,
+      roomCode,
     });
 
     const updateTypingList = () => {
-      const now = Date.now();
-      const active: string[] = [];
-      awareness.getStates().forEach((state, cId) => {
-        if (cId === awareness.clientID) return; // Do not show self
-        const u = state.user;
-        if (!u || !u.username) return;
-        if (u.username === currentUsername) return; // Never show self
-        if (u.docId && doc?.id && u.docId !== doc.id) return; // Filter other documents
-        if (u.isTyping && now - (u.lastActive || 0) < 3000) {
-          if (!active.includes(u.username)) {
-            active.push(u.username);
-          }
+      const active = getActiveTypingUsernames(
+        awareness.getStates() as any,
+        awareness.clientID,
+        {
+          currentUserId,
+          currentUsername,
+          docId: doc?.id,
+          ttlMs: 3000,
         }
-      });
+      );
 
       setTypingUsers((prev) => {
         if (prev.length === active.length && prev.every((u, i) => u === active[i])) {
@@ -251,7 +294,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     };
 
     awareness.on('change', updateTypingList);
-    const sweepInterval = window.setInterval(updateTypingList, 800);
+    const sweepInterval = window.setInterval(updateTypingList, 600);
 
     return () => {
       window.clearInterval(sweepInterval);
@@ -261,27 +304,47 @@ export const EditorView: React.FC<EditorViewProps> = ({
         awarenessRef.current = null;
       }
     };
-  }, [collabDoc, currentUsername, doc?.id]);
+  }, [collabDoc, currentUserId, currentUsername, doc?.id, roomCode]);
+
+  // Immediately clear typing state for users who disconnected or were kicked
+  useEffect(() => {
+    const awareness = awarenessRef.current;
+    if (!awareness || !onlineUsers) return;
+    const removedIds = pruneDisconnectedPresence(
+      awareness.getStates() as any,
+      awareness.clientID,
+      onlineUsers
+    );
+    if (removedIds.length > 0) {
+      awareness.emit('change', [{ added: [], updated: [], removed: removedIds }, 'disconnect']);
+    }
+  }, [onlineUsers, collabDoc]);
 
   // Listen to remote presence and propagate to local Awareness
   useEffect(() => {
     if (!latestPresence || !awarenessRef.current) return;
-    const { user_id, username, cursor } = latestPresence;
-    if (!cursor || !username) return;
-    if (currentUsername && username.trim().toLowerCase() === currentUsername.trim().toLowerCase()) return;
-    if (cursor.docId && doc?.id && cursor.docId !== doc.id) return;
+    if (lastProcessedPresenceRef.current === latestPresence) return;
+    lastProcessedPresenceRef.current = latestPresence;
 
-    const remoteClientId = hashClientId(user_id || username);
-    awarenessRef.current.states.set(remoteClientId, {
-      user: {
-        username,
-        isTyping: !!cursor.isTyping,
-        lastActive: Date.now(),
-        docId: cursor.docId,
-      },
-    });
-    awarenessRef.current.emit('change', [{ added: [], updated: [remoteClientId], removed: [] }, 'remote']);
-  }, [latestPresence, currentUsername, doc?.id, collabDoc]);
+    const result = applyRemotePresenceToMap(
+      awarenessRef.current.states as any,
+      awarenessRef.current.clientID,
+      latestPresence,
+      {
+        currentUserId,
+        currentUsername,
+        docId: doc?.id,
+        roomCode,
+      }
+    );
+    if (result.changed && result.clientId !== undefined) {
+      awarenessRef.current.emit('change', [{
+        added: [],
+        updated: result.action === 'updated' ? [result.clientId] : [],
+        removed: result.action === 'removed' ? [result.clientId] : [],
+      }, 'remote']);
+    }
+  }, [latestPresence, currentUserId, currentUsername, doc?.id, roomCode, collabDoc]);
 
   // Auto-masking regex for credit cards (13-19 digits) and account numbers
   const maskSensitiveNumbers = (text: string) => {
@@ -323,24 +386,20 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const editor = useEditor({
     extensions: editorExtensions,
     editable: !isLocked && currentUserRole !== 'viewer' && !isDecrypting && !!collabDoc,
-    onUpdate: () => {
-      handleUserTyping();
+    onUpdate: ({ transaction }) => {
+      if (isLocalTipTapUpdate(transaction, ySyncPluginKey)) {
+        handleUserTyping();
+      }
     },
     editorProps: {
       handleDOMEvents: {
-        keydown: () => {
-          handleUserTyping();
-          return false;
-        },
-        input: () => {
-          handleUserTyping();
+        keydown: (_view, event) => {
+          if (isEditingKeydown(event)) {
+            handleUserTyping();
+          }
           return false;
         },
         paste: () => {
-          handleUserTyping();
-          return false;
-        },
-        compositionstart: () => {
           handleUserTyping();
           return false;
         },
@@ -726,23 +785,47 @@ export const EditorView: React.FC<EditorViewProps> = ({
   // Watermarked Export
   const handleExport = async (format = 'markdown') => {
     if (!doc) return;
+    if (currentUserRole === 'viewer') {
+      setExportError('Viewers cannot export documents.');
+      return;
+    }
+    if (isLocked) {
+      setExportError('Exporting is disabled while room is in lockdown.');
+      return;
+    }
+    if (isDecrypting || !collabDocRef.current) {
+      setExportError('Document is still decrypting. Please wait a moment and try again.');
+      return;
+    }
+
     setExporting(true);
+    setExportError(null);
+    setExportResult(null);
     try {
       const res = await api.exportDocument(roomCode, doc.id, format);
-      setExportResult(res);
+      const content = extractDocumentContent({
+        doc,
+        format,
+        plaintext: plaintextRef.current,
+        collabCodeText: doc.doc_type === 'code' ? collabDocRef.current.getText('codemirror').toString() : undefined,
+        editorJson: editor ? editor.getJSON() : undefined,
+        editorText: editor ? editor.getText() : undefined,
+      });
 
-      // Create downloadable file with embedded watermark
-      const content = doc.doc_type === 'code' ? plaintext : (editor ? editor.getText() : plaintext);
-      const watermarkedContent = `/* ${res.watermark} */\n\n${content}`;
-      const blob = new Blob([watermarkedContent], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${doc.title.replace(/\s+/g, '_')}_${res.export_id}.txt`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const artifact = buildExportArtifact({
+        doc,
+        content,
+        exportMeta: res,
+        format,
+      });
+
+      triggerBlobDownload(artifact.content, artifact.filename, artifact.mimeType);
+      setExportResult({
+        ...res,
+        filename: artifact.filename,
+      });
     } catch (err: any) {
-      alert(`Export blocked: ${err.message}`);
+      setExportError(err?.message || 'Document export failed.');
     } finally {
       setExporting(false);
     }
@@ -850,16 +933,59 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
           {/* Watermarked Export */}
           <button
-            onClick={() => handleExport('markdown')}
-            disabled={exporting || isLocked}
-            title="Export with forensic watermark and tracking token"
-            className="hidden sm:flex px-2 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] text-xs font-mono text-slate-200 transition-colors items-center space-x-1"
+            onClick={() => { void handleExport(doc.doc_type === 'code' ? 'plain' : 'markdown'); }}
+            disabled={exporting || isLocked || isDecrypting || !collabDoc || currentUserRole === 'viewer'}
+            title={
+              currentUserRole === 'viewer'
+                ? 'Viewers cannot export documents'
+                : isLocked
+                ? 'Export disabled during room lockdown'
+                : 'Export decrypted document with forensic watermark'
+            }
+            aria-label="Export document"
+            className="flex px-2 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] disabled:opacity-50 text-xs font-mono text-slate-200 transition-colors items-center space-x-1"
           >
-            <Download className="w-3 h-3 text-cyan-400" />
-            <span>Export</span>
+            <Download className={`w-3 h-3 text-cyan-400 ${exporting ? 'animate-pulse' : ''}`} />
+            <span className="hidden md:inline">{exporting ? 'Exporting…' : 'Export'}</span>
           </button>
         </div>
       </div>
+
+      {/* Export Status / Error Feedback Banner */}
+      {(exportError || exportResult) && (
+        <div
+          role={exportError ? 'alert' : 'status'}
+          className={`px-4 py-1.5 border-b text-xs font-mono flex items-center justify-between gap-2 ${
+            exportError
+              ? 'bg-red-950/70 border-red-800/60 text-red-200'
+              : 'bg-emerald-950/60 border-emerald-800/50 text-emerald-200'
+          }`}
+        >
+          <div className="flex items-center space-x-2 min-w-0">
+            {exportError ? (
+              <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+            ) : (
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            )}
+            <span className="truncate">
+              {exportError
+                ? `Export failed: ${exportError}`
+                : `Exported ${exportResult?.filename || 'document'} (ID: ${exportResult?.export_id})`}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setExportError(null);
+              setExportResult(null);
+            }}
+            aria-label="Dismiss export notice"
+            className="text-current opacity-75 hover:opacity-100 p-0.5 rounded"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* TipTap Formatting Toolbar (Only in Document Mode) */}
       {doc.doc_type === 'document' && editor && (
@@ -954,7 +1080,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 handleContentChange(e.target.value);
                 handleUserTyping();
               }}
-              onKeyDown={handleUserTyping}
+              onKeyDown={(e) => {
+                if (isEditingKeydown(e)) {
+                  handleUserTyping();
+                }
+              }}
               onPaste={handleUserTyping}
               onBlur={handleEditorBlur}
               disabled={isLocked || isDecrypting || !collabDoc || currentUserRole === 'viewer'}

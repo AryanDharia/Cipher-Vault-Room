@@ -347,6 +347,8 @@ async def export_document(
     room, member = await get_room_and_membership(code, user, db)
     if room.is_locked:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Exporting is disabled while room is in lockdown")
+    if member.role == "viewer" and user.id != room.creator_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Viewers cannot export documents")
 
     result = await db.execute(
         select(Document).where(Document.id == doc_id, Document.room_id == room.id)
