@@ -1,11 +1,8 @@
 import os
 import uuid
-from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, update as sql_update
 from sqlalchemy.exc import IntegrityError
@@ -304,29 +301,17 @@ async def websocket_endpoint(
         logger.warning(f"[WS LOOP EXIT] Socket {socket_id} in room '{code}' exited: {e}")
         await manager.disconnect(code, socket_id)
 
-# -------------------------------------------------------------
-# Single-Service SPA Frontend Serving
-# Serves the built React / TipTap frontend from FastAPI
-# -------------------------------------------------------------
-FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-
-if FRONTEND_DIST.exists():
-    assets_dir = FRONTEND_DIST / "assets"
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
-
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_spa_frontend(full_path: str):
-        # Allow API routes to be handled by routers
-        if full_path.startswith("api/") or full_path.startswith("ws/"):
-            return status.HTTP_404_NOT_FOUND
-        
-        target_file = FRONTEND_DIST / full_path
-        if full_path and target_file.is_file():
-            return FileResponse(target_file)
-        
-        index_html = FRONTEND_DIST / "index.html"
-        if index_html.is_file():
-            return FileResponse(index_html)
-        
-        return {"error": "Frontend build files not found. Run npm run build in frontend directory."}
+@app.get("/", include_in_schema=False)
+async def backend_root():
+    """
+    Backend-only service info endpoint.
+    The VaultRoom web frontend is hosted separately on Cloudflare Pages.
+    """
+    return {
+        "status": "ok",
+        "service": "vaultroom-backend",
+        "role": "api-and-websocket-only",
+        "frontend_url": "https://cipher-vault-room.pages.dev",
+        "health": "/api/health",
+        "docs": "/docs",
+    }

@@ -9,8 +9,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: NODE_VERSION
-        value: 22.16.0
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
