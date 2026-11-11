@@ -443,6 +443,12 @@ export function App() {
       if (data.name) setRoomName(data.name);
     });
 
+    ws.on('WAITING_ROOM_UPDATED', (data) => {
+      console.info('[App] WAITING_ROOM_UPDATED received:', data);
+      window.dispatchEvent(new CustomEvent('vaultroom:waiting_room_updated', { detail: data }));
+      refreshMembers();
+    });
+
     ws.on('ROOM_DELETED', (data) => {
       console.warn('[App] ROOM_DELETED received:', data);
       if (roomCode) {

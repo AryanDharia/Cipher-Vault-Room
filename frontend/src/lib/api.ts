@@ -183,7 +183,70 @@ class ApiClient {
     );
   }
 
-  // Documents
+  // Waiting Room / Join Requests
+  async requestRoomAccess(code: string, requestType: 'join' | 'reentry' = 'join') {
+    return this.request<{
+      status: string;
+      request_id: string;
+      request_type: string;
+      message: string;
+    }>(`/rooms/${code}/join-request`, {
+      method: 'POST',
+      body: JSON.stringify({ request_type: requestType }),
+    });
+  }
+
+  async getJoinRequests(code: string) {
+    return this.request<
+      Array<{
+        id: string;
+        room_id: string;
+        user_id: string;
+        username: string;
+        request_type: 'join' | 'reentry';
+        status: 'pending' | 'approved' | 'rejected';
+        created_at: string;
+        reviewed_at?: string | null;
+        reviewed_by?: string | null;
+        membership_status: string;
+      }>
+    >(`/rooms/${code}/join-requests`);
+  }
+
+  async approveJoinRequest(code: string, requestId: string) {
+    return this.request<{
+      status: string;
+      request_id: string;
+      approved_user_id: string;
+      message: string;
+    }>(`/rooms/${code}/join-requests/${requestId}/approve`, {
+      method: 'POST',
+    });
+  }
+
+  async rejectJoinRequest(code: string, requestId: string) {
+    return this.request<{
+      status: string;
+      request_id: string;
+      rejected_user_id: string;
+      message: string;
+    }>(`/rooms/${code}/join-requests/${requestId}/reject`, {
+      method: 'POST',
+    });
+  }
+
+  async getJoinRequestStatus(code: string) {
+    return this.request<{
+      has_request: boolean;
+      status?: 'pending' | 'approved' | 'rejected';
+      request_id?: string;
+      request_type?: string;
+      created_at?: string;
+      reviewed_at?: string | null;
+    }>(`/rooms/${code}/join-request/status`);
+  }
+
+    // Documents
   async listDocuments(code: string) {
     return this.request<any[]>(`/rooms/${code}/documents`);
   }

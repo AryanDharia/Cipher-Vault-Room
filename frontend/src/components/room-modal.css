@@ -27,10 +27,7 @@
   align-items: center;
   justify-content: center;
   padding: clamp(16px, 3.5vw, 40px);
-  background:
-    radial-gradient(ellipse at 17% 8%, rgba(29, 104, 112, 0.22), transparent 38%),
-    radial-gradient(ellipse at 91% 92%, rgba(20, 108, 98, 0.14), transparent 35%),
-    var(--vr-ink);
+  background: transparent;
   color: #edf4f5;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   user-select: none;
@@ -352,13 +349,15 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border: 1px solid rgba(190, 218, 224, 0.15);
+  border: 1px solid rgba(33, 212, 229, 0.28);
   border-radius: 24px;
-  background: linear-gradient(150deg, rgba(17, 24, 30, 0.94), rgba(11, 16, 21, 0.97));
+  background: linear-gradient(150deg, rgba(14, 25, 29, 0.88), rgba(8, 15, 18, 0.92));
   box-shadow:
-    0 34px 100px rgba(0, 0, 0, 0.5),
-    0 1px rgba(255, 255, 255, 0.04) inset;
+    0 28px 90px rgba(0, 0, 0, 0.65),
+    0 0 1px rgba(33, 212, 229, 0.35) inset,
+    0 0 25px rgba(33, 212, 229, 0.08);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   padding: clamp(26px, 4.4vw, 40px);
   animation: vr-room-rise 550ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   margin: auto 0;
@@ -804,11 +803,11 @@
   justify-content: center;
   gap: 10px;
   margin-top: 6px;
-  border: 1px solid rgba(104, 232, 226, 0.44);
+  border: 1px solid rgba(33, 212, 229, 0.45);
   border-radius: 10px;
-  background: linear-gradient(105deg, #35c9d2, #49d6bd);
-  box-shadow: 0 9px 25px rgba(28, 159, 159, 0.17), 0 1px rgba(255, 255, 255, 0.36) inset;
-  color: #062022;
+  background: linear-gradient(105deg, #10bfa5, #21d4e5);
+  box-shadow: 0 0 16px rgba(33, 212, 229, 0.32), 0 1px rgba(255, 255, 255, 0.3) inset;
+  color: #05090b;
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
@@ -958,4 +957,113 @@
 .vr-room__visibility-btn:hover {
   color: var(--vr-cyan);
   background: rgba(33, 212, 229, 0.1);
+}
+
+
+/* ==========================================================================
+   Re-entry Authorization Request Panel
+   ========================================================================== */
+.vr-room__reentry-card {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(14, 22, 26, 0.95);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(245, 158, 11, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: vr-room-content-in 200ms ease both;
+}
+
+.vr-room__reentry-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vr-room__reentry-icon {
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.vr-room__reentry-title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fcd34d;
+}
+
+.vr-room__reentry-desc {
+  font-size: 11px;
+  color: #91a4a7;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.vr-room__reentry-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(33, 212, 229, 0.45);
+  background: linear-gradient(135deg, rgba(16, 191, 165, 0.22), rgba(33, 212, 229, 0.28));
+  color: #21d4e5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 180ms ease;
+  box-shadow: 0 0 14px rgba(33, 212, 229, 0.18);
+}
+
+.vr-room__reentry-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(16, 191, 165, 0.35), rgba(33, 212, 229, 0.42));
+  border-color: rgba(33, 212, 229, 0.7);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(33, 212, 229, 0.3);
+}
+
+.vr-room__reentry-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.vr-room__reentry-status--pending {
+  background: rgba(33, 212, 229, 0.09);
+  border: 1px solid rgba(33, 212, 229, 0.35);
+  color: #21d4e5;
+}
+
+.vr-room__reentry-status--approved {
+  background: rgba(16, 191, 165, 0.14);
+  border: 1px solid rgba(16, 191, 165, 0.45);
+  color: #10bfa5;
+}
+
+.vr-room__reentry-status--rejected {
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #ef4444;
+}
+
+.vr-room__status-bold {
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.vr-room__status-hint {
+  font-size: 10px;
+  color: #91a4a7;
+  line-height: 1.4;
 }

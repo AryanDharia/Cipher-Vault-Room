@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database.session import get_db
-from app.database.models import User, Room, RoomMember, AuditEvent, utcnow
+from app.database.models import User, Room, RoomMember, AuditEvent, WaitingRoomRequest, utcnow
 from app.auth.dependencies import get_current_user, get_room_and_membership
 from app.rooms.service import RoomService, normalize_room_code
 from app.collaboration.manager import manager
@@ -18,6 +18,9 @@ class CreateRoomRequest(BaseModel):
     max_members: Optional[int] = Field(20, ge=2, le=100)
     threshold_required: Optional[int] = Field(None, ge=1, le=20)
     threshold_total: Optional[int] = Field(None, ge=1, le=20)
+
+class CreateJoinRequestPayload(BaseModel):
+    request_type: Optional[str] = "join"
 
 class JoinRoomRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=10)
@@ -498,6 +501,329 @@ async def delete_room(
         "status": "success",
         "room_code": normalized,
         "message": "Room and all associated records permanently deleted"
+    }
+
+# ============================================================================
+# WAITING ROOM & JOIN / RE-ENTRY AUTHORIZATION
+# ============================================================================
+
+@router.post("/{code}/join-request")
+async def create_join_request(
+    code: str,
+    payload: Optional[CreateJoinRequestPayload] = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Submit a join or re-entry request to the room's Waiting Room.
+    Used by unauthorized users or previously removed members.
+    """
+    normalized = normalize_room_code(code)
+    room = await RoomService.get_by_code(db, normalized)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
+
+    # Check if user is already an active non-kicked member
+    mem_res = await db.execute(
+        select(RoomMember).where(RoomMember.room_id == room.id, RoomMember.user_id == user.id)
+    )
+    existing_member = mem_res.scalar_one_or_none()
+    if existing_member and not existing_member.is_kicked:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You are already an active member of this room"
+        )
+
+    # Check for existing pending request to prevent duplicate spam
+    pend_res = await db.execute(
+        select(WaitingRoomRequest).where(
+            WaitingRoomRequest.room_id == room.id,
+            WaitingRoomRequest.user_id == user.id,
+            WaitingRoomRequest.status == "pending"
+        )
+    )
+    pending_req = pend_res.scalar_one_or_none()
+    if pending_req:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A join request is already pending host approval"
+        )
+
+    # Determine request type: if member was kicked, default is reentry
+    req_type = "reentry" if (existing_member and existing_member.is_kicked) else "join"
+    if payload and payload.request_type:
+        req_type = payload.request_type
+
+    req_record = WaitingRoomRequest(
+        room_id=room.id,
+        user_id=user.id,
+        request_type=req_type,
+        status="pending",
+        created_at=utcnow()
+    )
+    db.add(req_record)
+
+    audit = AuditEvent(
+        room_id=room.id,
+        user_id=user.id,
+        username=user.username,
+        event_type="WAITING_ROOM_REQUEST",
+        severity="info",
+        details_json=f'{{"user_id":"{user.id}","username":"{user.username}","request_type":"{req_type}"}}'
+    )
+    db.add(audit)
+    await db.commit()
+    await db.refresh(req_record)
+
+    # Notify room participants (hosts & co-hosts in waiting room)
+    await manager.broadcast(room.code, {
+        "type": "WAITING_ROOM_UPDATED",
+        "action": "request_created",
+        "request_id": req_record.id,
+        "username": user.username,
+        "request_type": req_type,
+        "created_at": req_record.created_at.isoformat()
+    })
+
+    return {
+        "status": "pending",
+        "request_id": req_record.id,
+        "room_code": room.code,
+        "request_type": req_type,
+        "created_at": req_record.created_at.isoformat(),
+        "message": "Your request has been submitted to the room host's Waiting Room"
+    }
+
+@router.get("/{code}/join-requests")
+async def get_join_requests(
+    code: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all pending and recent Waiting Room requests for this room.
+    Strictly restricted to room host and co-hosts.
+    """
+    room, member = await get_room_and_membership(code, user, db)
+    is_host = (room.creator_id == user.id) or (member.role == "owner")
+    if not (is_host or member.role == "co_host"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room host and co-hosts can view the Waiting Room"
+        )
+
+    res = await db.execute(
+        select(WaitingRoomRequest, User.username)
+        .join(User, WaitingRoomRequest.user_id == User.id)
+        .where(WaitingRoomRequest.room_id == room.id)
+        .order_by(WaitingRoomRequest.created_at.desc())
+    )
+    rows = res.all()
+
+    requests_data = []
+    for req_rec, uname in rows:
+        requests_data.append({
+            "id": req_rec.id,
+            "room_id": req_rec.room_id,
+            "room_code": room.code,
+            "user_id": req_rec.user_id,
+            "username": uname,
+            "request_type": req_rec.request_type,
+            "status": req_rec.status,
+            "created_at": req_rec.created_at.isoformat(),
+            "reviewed_by": req_rec.reviewed_by,
+            "reviewed_at": req_rec.reviewed_at.isoformat() if req_rec.reviewed_at else None
+        })
+
+    return {"requests": requests_data}
+
+@router.post("/{code}/join-requests/{request_id}/approve")
+async def approve_join_request(
+    code: str,
+    request_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Host/Co-Host approval of a waiting room join or re-entry request.
+    Validates permissions, prevents self-approval and replay attacks.
+    """
+    room, member = await get_room_and_membership(code, user, db)
+    is_host = (room.creator_id == user.id) or (member.role == "owner")
+    if not (is_host or member.role == "co_host"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room host and co-hosts can approve waiting room requests"
+        )
+
+    req_res = await db.execute(
+        select(WaitingRoomRequest, User.username)
+        .join(User, WaitingRoomRequest.user_id == User.id)
+        .where(WaitingRoomRequest.id == request_id, WaitingRoomRequest.room_id == room.id)
+    )
+    row = req_res.first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Join request not found")
+
+    req_record, target_username = row
+    if req_record.user_id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot approve your own join request"
+        )
+
+    if req_record.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Request is already {req_record.status} and cannot be processed again"
+        )
+
+    now = utcnow()
+    req_record.status = "approved"
+    req_record.reviewed_by = user.id
+    req_record.reviewed_at = now
+
+    # If the user was previously kicked, unban them so they can complete normal join with passphrase
+    target_mem_res = await db.execute(
+        select(RoomMember).where(RoomMember.room_id == room.id, RoomMember.user_id == req_record.user_id)
+    )
+    target_mem = target_mem_res.scalar_one_or_none()
+    if target_mem and target_mem.is_kicked:
+        target_mem.is_kicked = False
+
+    audit = AuditEvent(
+        room_id=room.id,
+        user_id=user.id,
+        username=user.username,
+        event_type="WAITING_ROOM_APPROVED",
+        severity="info",
+        details_json=f'{{"target_user_id":"{req_record.user_id}","target_username":"{target_username}","by":"{user.username}"}}'
+    )
+    db.add(audit)
+    await db.commit()
+
+    # Broadcast update to room
+    await manager.broadcast(room.code, {
+        "type": "WAITING_ROOM_UPDATED",
+        "action": "approved",
+        "request_id": request_id,
+        "target_user_id": req_record.user_id,
+        "target_username": target_username,
+        "by_username": user.username
+    })
+
+    return {
+        "status": "success",
+        "message": f"Join request for {target_username} approved",
+        "request_id": request_id,
+        "new_status": "approved"
+    }
+
+@router.post("/{code}/join-requests/{request_id}/reject")
+async def reject_join_request(
+    code: str,
+    request_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Host/Co-Host rejection of a waiting room join or re-entry request.
+    Validates permissions, prevents self-rejection and replay attacks.
+    """
+    room, member = await get_room_and_membership(code, user, db)
+    is_host = (room.creator_id == user.id) or (member.role == "owner")
+    if not (is_host or member.role == "co_host"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room host and co-hosts can reject waiting room requests"
+        )
+
+    req_res = await db.execute(
+        select(WaitingRoomRequest, User.username)
+        .join(User, WaitingRoomRequest.user_id == User.id)
+        .where(WaitingRoomRequest.id == request_id, WaitingRoomRequest.room_id == room.id)
+    )
+    row = req_res.first()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Join request not found")
+
+    req_record, target_username = row
+    if req_record.user_id == user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot reject your own join request"
+        )
+
+    if req_record.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Request is already {req_record.status} and cannot be processed again"
+        )
+
+    now = utcnow()
+    req_record.status = "rejected"
+    req_record.reviewed_by = user.id
+    req_record.reviewed_at = now
+
+    audit = AuditEvent(
+        room_id=room.id,
+        user_id=user.id,
+        username=user.username,
+        event_type="WAITING_ROOM_REJECTED",
+        severity="info",
+        details_json=f'{{"target_user_id":"{req_record.user_id}","target_username":"{target_username}","by":"{user.username}"}}'
+    )
+    db.add(audit)
+    await db.commit()
+
+    # Broadcast update to room
+    await manager.broadcast(room.code, {
+        "type": "WAITING_ROOM_UPDATED",
+        "action": "rejected",
+        "request_id": request_id,
+        "target_user_id": req_record.user_id,
+        "target_username": target_username,
+        "by_username": user.username
+    })
+
+    return {
+        "status": "success",
+        "message": f"Join request for {target_username} rejected",
+        "request_id": request_id,
+        "new_status": "rejected"
+    }
+
+@router.get("/{code}/join-request/status")
+async def get_my_join_request_status(
+    code: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieve the calling user's latest join/re-entry request status for this room.
+    """
+    normalized = normalize_room_code(code)
+    room = await RoomService.get_by_code(db, normalized)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
+
+    res = await db.execute(
+        select(WaitingRoomRequest)
+        .where(WaitingRoomRequest.room_id == room.id, WaitingRoomRequest.user_id == user.id)
+        .order_by(WaitingRoomRequest.created_at.desc())
+    )
+    latest_req = res.scalar_one_or_none()
+    if not latest_req:
+        return {"has_request": False, "status": None}
+
+    return {
+        "has_request": True,
+        "id": latest_req.id,
+        "room_code": room.code,
+        "request_type": latest_req.request_type,
+        "status": latest_req.status,
+        "created_at": latest_req.created_at.isoformat(),
+        "reviewed_at": latest_req.reviewed_at.isoformat() if latest_req.reviewed_at else None
     }
 
 @router.post("/maintenance/cleanup-expired")

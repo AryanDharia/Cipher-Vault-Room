@@ -198,7 +198,7 @@ class RoomService:
         from sqlalchemy import delete
         from app.database.models import (
             ExportRecord, AuditEvent, SourceItem, VaultSecret,
-            ThresholdApproval, Document, DocumentUpdate, RoomMember
+            ThresholdApproval, Document, DocumentUpdate, RoomMember, WaitingRoomRequest
         )
         from app.collaboration.manager import manager
 
@@ -211,6 +211,7 @@ class RoomService:
         await db.execute(delete(SourceItem).where(SourceItem.room_id == room_id))
         await db.execute(delete(VaultSecret).where(VaultSecret.room_id == room_id))
         await db.execute(delete(ThresholdApproval).where(ThresholdApproval.room_id == room_id))
+        await db.execute(delete(WaitingRoomRequest).where(WaitingRoomRequest.room_id == room_id))
         await db.execute(delete(DocumentUpdate).where(DocumentUpdate.room_id == room_id))
         await db.execute(delete(Document).where(Document.room_id == room_id))
         await db.execute(delete(RoomMember).where(RoomMember.room_id == room_id))

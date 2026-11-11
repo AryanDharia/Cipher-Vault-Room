@@ -15,6 +15,10 @@ import {
   KeyRound,
   FileText,
   AlertTriangle,
+  RotateCcw,
+  CheckCircle,
+  Clock,
+  XCircle,
   Eye,
   EyeOff,
   Cpu
@@ -62,6 +66,88 @@ export const RoomModal: React.FC<RoomModalProps> = ({
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Re-entry authorization request state
+  const [reentryStatus, setReentryStatus] = useState<'idle' | 'pending' | 'approved' | 'rejected'>('idle');
+  const [reentrySubmitting, setReentrySubmitting] = useState(false);
+  const pollTimerRef = useRef<any>(null);
+
+  const cleanCurrentCode = roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  const stopReentryPolling = () => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => stopReentryPolling();
+  }, []);
+
+  // Reset re-entry state if roomCode or mode changes
+  useEffect(() => {
+    setReentryStatus('idle');
+    stopReentryPolling();
+  }, [roomCode, mode]);
+
+  const handleRequestReentry = async () => {
+    if (cleanCurrentCode.length !== 6) {
+      setError('Please enter a valid 6-character room code first.');
+      return;
+    }
+    setReentrySubmitting(true);
+    try {
+      await api.requestRoomAccess(cleanCurrentCode, 'reentry');
+      setReentryStatus('pending');
+      stopReentryPolling();
+
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const res = await api.getJoinRequestStatus(cleanCurrentCode);
+          if (res && res.has_request) {
+            if (res.status === 'approved') {
+              setReentryStatus('approved');
+              setError(null);
+              stopReentryPolling();
+            } else if (res.status === 'rejected') {
+              setReentryStatus('rejected');
+              stopReentryPolling();
+            }
+          }
+        } catch {
+          // ignore transient poll error
+        }
+      }, 3000);
+    } catch (err: any) {
+      const msg = err.message || '';
+      if (msg.includes('already pending')) {
+        setReentryStatus('pending');
+        stopReentryPolling();
+        pollTimerRef.current = setInterval(async () => {
+          try {
+            const res = await api.getJoinRequestStatus(cleanCurrentCode);
+            if (res && res.has_request) {
+              if (res.status === 'approved') {
+                setReentryStatus('approved');
+                setError(null);
+                stopReentryPolling();
+              } else if (res.status === 'rejected') {
+                setReentryStatus('rejected');
+                stopReentryPolling();
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }, 3000);
+      } else {
+        setError(msg || 'Failed to submit re-entry request');
+      }
+    } finally {
+      setReentrySubmitting(false);
+    }
+  };
   const [showUserMenu, setShowUserMenu] = useState(defaultShowUserMenu);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -157,6 +243,11 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   };
 
   const isCreate = mode === 'create';
+  const isKickedError = !isCreate && !!error && (
+    error.toLowerCase().includes('removed') ||
+    error.toLowerCase().includes('cannot rejoin without authorization') ||
+    error.toLowerCase().includes('kicked')
+  );
 
   return (
     <div className="vr-room" role="dialog" aria-modal="true" aria-labelledby="vr-room-heading">
@@ -349,10 +440,71 @@ export const RoomModal: React.FC<RoomModalProps> = ({
         </div>
 
         {/* Error Alert Banner */}
-        {error && (
+        {error && !isKickedError && (
           <div className="vr-room__error" role="alert">
             <AlertTriangle size={15} aria-hidden="true" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* Re-entry Request Panel for Kicked or Unauthorized Users */}
+        {isKickedError && (
+          <div className="vr-room__reentry-card" role="region" aria-label="Re-entry authorization request">
+            <div className="vr-room__reentry-header">
+              <RotateCcw size={15} className="vr-room__reentry-icon" aria-hidden="true" />
+              <span className="vr-room__reentry-title">Host Re-entry Authorization Required</span>
+            </div>
+            <p className="vr-room__reentry-desc">
+              You were previously removed from this room by the host. To rejoin, request authorization from the room host's Waiting Room.
+            </p>
+
+            {reentryStatus === 'idle' && (
+              <button
+                type="button"
+                onClick={handleRequestReentry}
+                disabled={reentrySubmitting}
+                className="vr-room__reentry-btn"
+              >
+                <RotateCcw size={14} aria-hidden="true" />
+                <span>{reentrySubmitting ? 'Submitting request...' : 'Request Re-entry Authorization'}</span>
+              </button>
+            )}
+
+            {reentryStatus === 'pending' && (
+              <div className="vr-room__reentry-status vr-room__reentry-status--pending">
+                <Clock size={15} className="vr-room__spinner-icon" aria-hidden="true" />
+                <div>
+                  <div className="vr-room__status-bold">Request Pending Host Approval</div>
+                  <div className="vr-room__status-hint">
+                    Your request has been submitted to the room's Waiting Room. This screen will update automatically once reviewed.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {reentryStatus === 'approved' && (
+              <div className="vr-room__reentry-status vr-room__reentry-status--approved">
+                <CheckCircle size={15} aria-hidden="true" />
+                <div>
+                  <div className="vr-room__status-bold text-emerald-400">Re-entry Authorized!</div>
+                  <div className="vr-room__status-hint">
+                    The host approved your request. Enter your passphrase and click "Join Encrypted Room" below.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {reentryStatus === 'rejected' && (
+              <div className="vr-room__reentry-status vr-room__reentry-status--rejected">
+                <XCircle size={15} aria-hidden="true" />
+                <div>
+                  <div className="vr-room__status-bold text-red-400">Request Declined</div>
+                  <div className="vr-room__status-hint">
+                    The room host declined your re-entry request.
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

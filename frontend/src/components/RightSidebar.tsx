@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users,
   CheckCircle,
@@ -16,8 +16,10 @@ import {
   Shield,
   UserMinus,
   Settings,
-  Cpu
+  Cpu,
+  RefreshCw
 } from 'lucide-react';
+import { api } from '../lib/api';
 import { RoomUser } from '../lib/websocket';
 
 interface RightSidebarProps {
@@ -60,6 +62,99 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   width,
 }) => {
   const [activeTab, setActiveTab] = useState<'approvals' | 'members' | 'guard'>('approvals');
+  const [membersSubTab, setMembersSubTab] = useState<'active' | 'waiting'>('active');
+
+  // Waiting Room state (host and co-host only)
+  const isPrivileged = currentUserRole === 'owner' || currentUserRole === 'co_host';
+  const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  const fetchJoinRequests = useCallback(async () => {
+    if (!roomCode || !isPrivileged) return;
+    try {
+      setLoadingRequests(true);
+      const reqs = await api.getJoinRequests(roomCode);
+      setJoinRequests(Array.isArray(reqs) ? reqs : []);
+    } catch {
+      // Ignore if unprivileged or network error
+    } finally {
+      setLoadingRequests(false);
+    }
+  }, [roomCode, isPrivileged]);
+
+  useEffect(() => {
+    if (isPrivileged) {
+      fetchJoinRequests();
+
+      // Listen for WebSocket waiting room updates dispatched from App.tsx
+      const handleWsUpdate = () => {
+        fetchJoinRequests();
+      };
+      window.addEventListener('vaultroom:waiting_room_updated', handleWsUpdate);
+      const interval = setInterval(fetchJoinRequests, 5000);
+      return () => {
+        window.removeEventListener('vaultroom:waiting_room_updated', handleWsUpdate);
+        clearInterval(interval);
+      };
+    }
+  }, [isPrivileged, fetchJoinRequests]);
+
+  const handleApproveRequest = async (requestId: string) => {
+    if (!roomCode) return;
+    setActionLoadingId(requestId);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await api.approveJoinRequest(roomCode, requestId);
+      setActionSuccess(res.message || 'Request approved successfully');
+      await fetchJoinRequests();
+      setTimeout(() => setActionSuccess(null), 3500);
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to approve request');
+      setTimeout(() => setActionError(null), 4000);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    if (!roomCode) return;
+    setActionLoadingId(requestId);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await api.rejectJoinRequest(roomCode, requestId);
+      setActionSuccess(res.message || 'Request rejected');
+      await fetchJoinRequests();
+      setTimeout(() => setActionSuccess(null), 3500);
+    } catch (err: any) {
+      setActionError(err.message || 'Failed to reject request');
+      setTimeout(() => setActionError(null), 4000);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const formatRequestTime = (isoString?: string) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+      if (diffSec < 60) return 'Just now';
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
+  const pendingRequests = joinRequests.filter((r) => r.status === 'pending');
+  const pendingCount = pendingRequests.length;
 
   // Threat test evaluation state
   const [evaluating, setEvaluating] = useState(false);
@@ -143,7 +238,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('members')}
-          className={`flex-1 py-1.5 text-xs font-mono font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-all ${
+          className={`flex-1 py-1.5 text-xs font-mono font-medium rounded-lg flex items-center justify-center space-x-1.5 transition-all relative ${
             activeTab === 'members'
               ? 'bg-gradient-to-r from-[#21d4e5]/18 to-[#10bfa5]/14 border border-[#21d4e5]/40 text-[#21d4e5] shadow-[0_0_12px_rgba(33,212,229,0.12)]'
               : 'border border-transparent text-[#91a4a7] hover:text-[#f2f7f7] hover:bg-[#0b1115]'
@@ -151,6 +246,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         >
           <Users className="w-3.5 h-3.5" />
           <span>Members</span>
+          {pendingCount > 0 && isPrivileged && (
+            <span
+              className="w-2 h-2 rounded-full bg-[#21d4e5] animate-pulse"
+              title={`${pendingCount} pending in Waiting Room`}
+            />
+          )}
         </button>
         <button
           onClick={() => setActiveTab('guard')}
@@ -278,139 +379,332 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         </div>
       )}
 
-      {/* TAB 2: ROOM MEMBERS & PERMISSIONS */}
+      {/* TAB 2: ROOM MEMBERS & WAITING ROOM */}
       {activeTab === 'members' && (
         <div className="flex-1 flex flex-col p-3.5 overflow-y-auto space-y-3 pr-2">
-          <div className="flex items-center justify-between mb-1 pb-2.5 border-b border-[rgba(100,220,205,0.12)]">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-wider text-[#91a4a7] font-semibold flex items-center space-x-1.5">
-                <span>Room Capacity</span>
-                <span className="text-[#21d4e5] font-bold">
-                  ({participantList.length} / {maxMembers})
-                </span>
-              </div>
-              <div className="text-[10px] font-mono text-[#10bfa5] mt-0.5 flex items-center space-x-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#10bfa5]" />
-                <span>{onlineUsers.length} Online Collaborators</span>
-              </div>
-            </div>
-
-            {(currentUserRole === 'owner' || currentUserRole === 'co_host') && onOpenSettings && (
+          {/* Sub-tab Switcher for Host / Co-Host */}
+          {isPrivileged && (
+            <div className="flex bg-[#070d10] p-1 rounded-xl border border-[rgba(100,220,205,0.14)] gap-1">
               <button
                 type="button"
-                onClick={onOpenSettings}
-                className="px-2.5 py-1 rounded-lg bg-[#0b1115] hover:bg-[#121c21] border border-[rgba(100,220,205,0.2)] text-[10px] font-mono text-[#21d4e5] hover:text-white flex items-center space-x-1 transition-all"
-                title="Adjust room settings and max capacity"
+                onClick={() => setMembersSubTab('active')}
+                className={`flex-1 py-1.5 px-2 text-xs font-mono font-medium rounded-lg transition-all flex items-center justify-center space-x-1.5 ${
+                  membersSubTab === 'active'
+                    ? 'bg-gradient-to-r from-[#21d4e5]/18 to-[#10bfa5]/14 border border-[#21d4e5]/40 text-[#21d4e5] shadow-[0_0_10px_rgba(33,212,229,0.12)]'
+                    : 'text-[#91a4a7] hover:text-[#f2f7f7]'
+                }`}
               >
-                <Settings className="w-3 h-3" />
-                <span>Capacity</span>
+                <Users className="w-3.5 h-3.5" />
+                <span>Active ({participantList.length})</span>
               </button>
-            )}
-          </div>
+              <button
+                type="button"
+                onClick={() => setMembersSubTab('waiting')}
+                className={`flex-1 py-1.5 px-2 text-xs font-mono font-medium rounded-lg transition-all flex items-center justify-center space-x-1.5 relative ${
+                  membersSubTab === 'waiting'
+                    ? 'bg-gradient-to-r from-[#21d4e5]/18 to-[#10bfa5]/14 border border-[#21d4e5]/40 text-[#21d4e5] shadow-[0_0_10px_rgba(33,212,229,0.12)]'
+                    : 'text-[#91a4a7] hover:text-[#f2f7f7]'
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span>Waiting Room</span>
+                {pendingCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold bg-[#21d4e5] text-[#05090b] shadow-[0_0_8px_rgba(33,212,229,0.8)]">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
 
-          <div className="space-y-2">
-            {participantList.length === 0 ? (
-              <div className="text-center py-8 text-xs text-[#91a4a7] border border-dashed border-[rgba(100,220,205,0.14)] rounded-xl">
-                No participants connected.
-              </div>
-            ) : (
-              participantList.map((m) => {
-                const online = m.is_online;
-                const roleLower = (m.role || 'editor').toLowerCase();
-                const isHost = roleLower === 'owner';
-                const isCoHost = roleLower === 'co_host' || roleLower === 'cohost';
-                const isSelf = m.user_id === currentUserId;
+          {/* Action notification banners */}
+          {actionSuccess && (
+            <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/50 text-xs font-mono text-emerald-300 flex items-center space-x-2 animate-fadeIn">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>{actionSuccess}</span>
+            </div>
+          )}
+          {actionError && (
+            <div className="p-2.5 rounded-lg bg-red-950/40 border border-red-500/50 text-xs font-mono text-red-300 flex items-center space-x-2 animate-fadeIn">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+              <span>{actionError}</span>
+            </div>
+          )}
 
-                const isCallerHost = currentUserRole === 'owner';
-                const isCallerCoHost = currentUserRole === 'co_host';
-                const canKick = !isSelf && !isHost && (isCallerHost || (isCallerCoHost && !isCoHost));
+          {/* SUB-SECTION A: ACTIVE MEMBERS */}
+          {(!isPrivileged || membersSubTab === 'active') && (
+            <>
+              <div className="flex items-center justify-between mb-1 pb-2.5 border-b border-[rgba(100,220,205,0.12)]">
+                <div>
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-[#91a4a7] font-semibold flex items-center space-x-1.5">
+                    <span>Room Capacity</span>
+                    <span className="text-[#21d4e5] font-bold">
+                      ({participantList.length} / {maxMembers})
+                    </span>
+                  </div>
+                  <div className="text-[10px] font-mono text-[#10bfa5] mt-0.5 flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#10bfa5]" />
+                    <span>{onlineUsers.length} Online Collaborators</span>
+                  </div>
+                </div>
 
-                return (
-                  <div
-                    key={m.user_id}
-                    className="p-2.5 rounded-xl bg-[rgba(12,22,25,0.7)] border border-[rgba(100,220,205,0.14)] hover:border-[#21d4e5]/30 transition-all shadow-sm"
+                {(currentUserRole === 'owner' || currentUserRole === 'co_host') && onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="px-2.5 py-1 rounded-lg bg-[#0b1115] hover:bg-[#121c21] border border-[rgba(100,220,205,0.2)] text-[10px] font-mono text-[#21d4e5] hover:text-white flex items-center space-x-1 transition-all"
+                    title="Adjust room settings and max capacity"
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2.5 truncate">
-                        <span
-                          className={`w-2 h-2 rounded-full shrink-0 ${
-                            online ? 'bg-[#10bfa5] shadow-[0_0_8px_rgba(16,191,165,0.8)]' : 'bg-slate-600'
-                          }`}
-                          title={online ? 'Online now' : 'Offline'}
-                        />
-                        <div className="truncate">
-                          <div className="text-xs font-semibold text-[#f2f7f7] truncate flex items-center space-x-1.5">
-                            <span>{m.username}</span>
-                            {isSelf && (
-                              <span className="text-[9px] font-mono text-[#91a4a7]">(You)</span>
+                    <Settings className="w-3 h-3" />
+                    <span>Capacity</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {participantList.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-[#91a4a7] border border-dashed border-[rgba(100,220,205,0.14)] rounded-xl">
+                    No participants connected.
+                  </div>
+                ) : (
+                  participantList.map((m) => {
+                    const online = m.is_online;
+                    const roleLower = (m.role || 'editor').toLowerCase();
+                    const isHost = roleLower === 'owner';
+                    const isCoHost = roleLower === 'co_host' || roleLower === 'cohost';
+                    const isSelf = m.user_id === currentUserId;
+
+                    const isCallerHost = currentUserRole === 'owner';
+                    const isCallerCoHost = currentUserRole === 'co_host';
+                    const canKick = !isSelf && !isHost && (isCallerHost || (isCallerCoHost && !isCoHost));
+
+                    return (
+                      <div
+                        key={m.user_id}
+                        className="p-2.5 rounded-xl bg-[rgba(12,22,25,0.7)] border border-[rgba(100,220,205,0.14)] hover:border-[#21d4e5]/30 transition-all shadow-sm"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2.5 truncate">
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                online ? 'bg-[#10bfa5] shadow-[0_0_8px_rgba(16,191,165,0.8)]' : 'bg-slate-600'
+                              }`}
+                              title={online ? 'Online now' : 'Offline'}
+                            />
+                            <div className="truncate">
+                              <div className="text-xs font-semibold text-[#f2f7f7] truncate flex items-center space-x-1.5">
+                                <span>{m.username}</span>
+                                {isSelf && (
+                                  <span className="text-[9px] font-mono text-[#91a4a7]">(You)</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Role Badge */}
+                          <div className="shrink-0 ml-2">
+                            {isHost ? (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold bg-[#21d4e5]/15 text-[#21d4e5] border border-[#21d4e5]/35 flex items-center space-x-1">
+                                <Crown className="w-3 h-3 text-[#21d4e5]" />
+                                <span>HOST</span>
+                              </span>
+                            ) : isCoHost ? (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold bg-[#10bfa5]/15 text-[#10bfa5] border border-[#10bfa5]/35 flex items-center space-x-1">
+                                <Shield className="w-3 h-3 text-[#10bfa5]" />
+                                <span>CO-HOST</span>
+                              </span>
+                            ) : roleLower === 'key_holder' ? (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-mono bg-amber-950/60 text-amber-300 border border-amber-800/50">
+                                KEY HOLDER
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-[#070d10] text-[#91a4a7] border border-[rgba(100,220,205,0.12)] uppercase font-semibold">
+                                {m.role}
+                              </span>
                             )}
                           </div>
                         </div>
-                      </div>
 
-                      {/* Role Badge */}
-                      <div className="shrink-0 ml-2">
-                        {isHost ? (
-                          <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold bg-[#21d4e5]/15 text-[#21d4e5] border border-[#21d4e5]/35 flex items-center space-x-1">
-                            <Crown className="w-3 h-3 text-[#21d4e5]" />
-                            <span>HOST</span>
-                          </span>
-                        ) : isCoHost ? (
-                          <span className="px-2 py-0.5 rounded-md text-[9px] font-mono font-bold bg-[#10bfa5]/15 text-[#10bfa5] border border-[#10bfa5]/35 flex items-center space-x-1">
-                            <Shield className="w-3 h-3 text-[#10bfa5]" />
-                            <span>CO-HOST</span>
-                          </span>
-                        ) : roleLower === 'key_holder' ? (
-                          <span className="px-2 py-0.5 rounded-md text-[9px] font-mono bg-amber-950/60 text-amber-300 border border-amber-800/50">
-                            KEY HOLDER
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-[#070d10] text-[#91a4a7] border border-[rgba(100,220,205,0.12)] uppercase font-semibold">
-                            {m.role}
-                          </span>
+                        {/* Member Controls */}
+                        {(isCallerHost || canKick) && !isSelf && (
+                          <div className="mt-2 pt-2 border-t border-[rgba(100,220,205,0.1)] flex items-center justify-between">
+                            {isCallerHost && !isHost ? (
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-[10px] font-mono text-[#91a4a7]">Role:</span>
+                                <select
+                                  value={isCoHost ? 'co_host' : m.role}
+                                  onChange={(e) => onUpdateRole(m.user_id, e.target.value)}
+                                  className="bg-[#070d10] border border-[rgba(100,220,205,0.16)] rounded px-2 py-0.5 text-[10px] font-mono text-[#f2f7f7] focus:outline-none focus:border-[#21d4e5]"
+                                >
+                                  <option value="co_host">Promote to Co-Host</option>
+                                  <option value="key_holder">Key Holder</option>
+                                  <option value="editor">Editor</option>
+                                  <option value="viewer">Viewer</option>
+                                </select>
+                              </div>
+                            ) : (
+                              <div />
+                            )}
+
+                            {canKick && (
+                              <button
+                                type="button"
+                                onClick={() => onRequestKickMember?.(m)}
+                                className="px-2 py-0.5 rounded-md text-[10px] font-mono text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-900/60 border border-red-900/60 flex items-center space-x-1 transition-all"
+                                title={`Remove ${m.username} from room`}
+                              >
+                                <UserMinus className="w-3 h-3" />
+                                <span>Kick</span>
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
-                    </div>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          )}
 
-                    {/* Member Controls */}
-                    {(isCallerHost || canKick) && !isSelf && (
-                      <div className="mt-2 pt-2 border-t border-[rgba(100,220,205,0.1)] flex items-center justify-between">
-                        {isCallerHost && !isHost ? (
-                          <div className="flex items-center space-x-1.5">
-                            <span className="text-[10px] font-mono text-[#91a4a7]">Role:</span>
-                            <select
-                              value={isCoHost ? 'co_host' : m.role}
-                              onChange={(e) => onUpdateRole(m.user_id, e.target.value)}
-                              className="bg-[#070d10] border border-[rgba(100,220,205,0.16)] rounded px-2 py-0.5 text-[10px] font-mono text-[#f2f7f7] focus:outline-none focus:border-[#21d4e5]"
+          {/* SUB-SECTION B: WAITING ROOM (Host & Co-host) */}
+          {isPrivileged && membersSubTab === 'waiting' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-[rgba(100,220,205,0.12)]">
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#91a4a7] font-semibold">
+                    Authorization Queue
+                  </span>
+                  <div className="text-xs font-mono font-bold text-[#f2f7f7] mt-0.5">
+                    {pendingCount} Pending {pendingCount === 1 ? 'Request' : 'Requests'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchJoinRequests}
+                  disabled={loadingRequests}
+                  className="p-1 rounded-lg bg-[#070d10] border border-[rgba(100,220,205,0.16)] text-[#91a4a7] hover:text-[#21d4e5] transition-all"
+                  title="Refresh Waiting Room queue"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingRequests ? 'animate-spin text-[#21d4e5]' : ''}`} />
+                </button>
+              </div>
+
+              {joinRequests.length === 0 ? (
+                <div className="text-center py-10 px-4 text-xs text-[#91a4a7] border border-dashed border-[rgba(100,220,205,0.14)] rounded-xl bg-[#070d10]/40">
+                  <Clock className="w-6 h-6 mx-auto mb-2 text-[#21d4e5]/40" />
+                  <p className="font-semibold text-[#f2f7f7] mb-1">Waiting Room is Empty</p>
+                  <p className="text-[11px] text-[#5c7275]">
+                    When users request access or re-entry, they will appear here for your review.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {joinRequests.map((req) => {
+                    const isPending = req.status === 'pending';
+                    const isApproved = req.status === 'approved';
+                    const isRejected = req.status === 'rejected';
+
+                    return (
+                      <div
+                        key={req.id}
+                        className={`p-3 rounded-xl border transition-all ${
+                          isApproved
+                            ? 'bg-emerald-950/20 border-emerald-800/40'
+                            : isRejected
+                            ? 'bg-red-950/20 border-red-800/40'
+                            : 'bg-[rgba(12,22,25,0.75)] border-[rgba(100,220,205,0.18)] hover:border-[#21d4e5]/40 shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center space-x-2 truncate">
+                            <div className="w-6 h-6 rounded-md bg-[#21d4e5]/10 border border-[#21d4e5]/30 flex items-center justify-center text-[#21d4e5] text-xs font-mono font-bold shrink-0">
+                              {req.username?.charAt(0)?.toUpperCase() || 'U'}
+                            </div>
+                            <span className="text-xs font-semibold text-[#f2f7f7] truncate">
+                              {req.username}
+                            </span>
+                          </div>
+
+                          {req.request_type === 'reentry' ? (
+                            <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-amber-950/60 border border-amber-800/50 text-amber-300 font-semibold flex items-center space-x-1 shrink-0">
+                              <RotateCcw className="w-2.5 h-2.5 mr-1" />
+                              <span>Re-entry Request</span>
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-cyan-950/60 border border-cyan-800/50 text-[#21d4e5] font-semibold flex items-center space-x-1 shrink-0">
+                              <UserCheck className="w-2.5 h-2.5 mr-1" />
+                              <span>New Join Request</span>
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between text-[10px] font-mono text-[#91a4a7] mt-1 mb-2">
+                          <span>
+                            Status:{' '}
+                            {req.membership_status === 'kicked' ? (
+                              <span className="text-red-400 font-semibold">Previously removed</span>
+                            ) : req.membership_status === 'active' ? (
+                              <span className="text-emerald-400 font-semibold">Active member</span>
+                            ) : (
+                              <span className="text-[#91a4a7]">Non-member</span>
+                            )}
+                          </span>
+                          {req.created_at && (
+                            <span className="text-[#5c7275]">{formatRequestTime(req.created_at)}</span>
+                          )}
+                        </div>
+
+                        {isPending ? (
+                          <div className="flex items-center space-x-2 mt-2 pt-2 border-t border-[rgba(100,220,205,0.1)]">
+                            <button
+                              type="button"
+                              disabled={actionLoadingId === req.id}
+                              onClick={() => handleApproveRequest(req.id)}
+                              className="flex-1 py-1 rounded-lg bg-[#10bfa5] hover:opacity-90 disabled:opacity-50 text-[#05090b] font-bold text-xs font-mono transition-all flex items-center justify-center space-x-1 shadow-sm"
                             >
-                              <option value="co_host">Promote to Co-Host</option>
-                              <option value="key_holder">Key Holder</option>
-                              <option value="editor">Editor</option>
-                              <option value="viewer">Viewer</option>
-                            </select>
+                              <CheckCircle className="w-3 h-3" />
+                              <span>{actionLoadingId === req.id ? 'Approving...' : 'Approve'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={actionLoadingId === req.id}
+                              onClick={() => handleRejectRequest(req.id)}
+                              className="flex-1 py-1 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold text-xs font-mono transition-all flex items-center justify-center space-x-1 shadow-sm"
+                            >
+                              <XCircle className="w-3 h-3" />
+                              <span>{actionLoadingId === req.id ? 'Rejecting...' : 'Reject'}</span>
+                            </button>
                           </div>
                         ) : (
-                          <div />
-                        )}
-
-                        {canKick && (
-                          <button
-                            type="button"
-                            onClick={() => onRequestKickMember?.(m)}
-                            className="px-2 py-0.5 rounded-md text-[10px] font-mono text-red-400 hover:text-red-300 bg-red-950/40 hover:bg-red-900/60 border border-red-900/60 flex items-center space-x-1 transition-all"
-                            title={`Remove ${m.username} from room`}
-                          >
-                            <UserMinus className="w-3 h-3" />
-                            <span>Kick</span>
-                          </button>
+                          <div className="mt-2 pt-1.5 border-t border-[rgba(100,220,205,0.08)] flex items-center justify-between text-[10px] font-mono">
+                            <span className="text-[#91a4a7]">Decision:</span>
+                            <span
+                              className={`font-semibold capitalize flex items-center space-x-1 ${
+                                isApproved ? 'text-emerald-400' : 'text-red-400'
+                              }`}
+                            >
+                              {isApproved ? (
+                                <>
+                                  <CheckCircle className="w-3 h-3 mr-1 inline" />
+                                  <span>Approved</span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="w-3 h-3 mr-1 inline" />
+                                  <span>Rejected</span>
+                                </>
+                              )}
+                            </span>
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

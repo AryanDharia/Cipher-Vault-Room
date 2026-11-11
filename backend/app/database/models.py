@@ -52,6 +52,7 @@ class Room(Base):
     sources = relationship("SourceItem", back_populates="room", cascade="all, delete-orphan")
     audit_events = relationship("AuditEvent", back_populates="room", cascade="all, delete-orphan")
     approvals = relationship("ThresholdApproval", back_populates="room", cascade="all, delete-orphan")
+    join_requests = relationship("WaitingRoomRequest", back_populates="room", cascade="all, delete-orphan")
 
 class RoomMember(Base):
     __tablename__ = "room_members"
@@ -174,3 +175,20 @@ class ExportRecord(Base):
     user_name = Column(String(50), nullable=False)
     watermark_text = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+class WaitingRoomRequest(Base):
+    __tablename__ = "waiting_room_requests"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    room_id = Column(String(36), ForeignKey("rooms.id"), index=True, nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id"), index=True, nullable=False)
+    request_type = Column(String(20), default="join", nullable=False)  # "join", "reentry"
+    status = Column(String(20), default="pending", nullable=False)     # "pending", "approved", "rejected", "expired"
+    reviewed_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+
+    room = relationship("Room", back_populates="join_requests")
+    user = relationship("User", foreign_keys=[user_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
+
