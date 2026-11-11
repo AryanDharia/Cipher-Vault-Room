@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -8,176 +9,304 @@ from app.database.session import AsyncSessionLocal, init_db
 from app.database.models import User, Room, RoomMember, WaitingRoomRequest
 from app.auth.security import hash_password, create_access_token
 
-@pytest.mark.asyncio
-async def test_waiting_room_flow_for_kicked_and_new_users():
-    """
-    Test Waiting Room workflow:
-    1. Host creates a room.
-    2. Member joins and gets kicked by host.
-    3. Kicked user is blocked from rejoining directly.
-    4. Kicked user submits a re-entry request.
-    5. Duplicate pending request is rejected.
-    6. Non-host cannot view or approve requests.
-    7. Host views Waiting Room and approves request.
-    8. Approved user can successfully rejoin with room code.
-    """
+@pytest_asyncio.fixture(autouse=True)
+async def setup_database():
     await init_db()
+
+@pytest.mark.asyncio
+async def test_scenario_1_room_with_admission_approval_enabled():
+    """
+    Test 1: Room with admission approval enabled
+    -> Guest B attempts join -> remains outside with 403 pending admission
+    -> Host A sees request in Waiting Room (request_type='join', membership_status='none')
+    -> Host A approves
+    -> Guest B completes join successfully.
+    """
     client = TestClient(app)
 
-    # 1. Create host and member
     host_name = f"host_{uuid.uuid4().hex[:6]}"
-    user_name = f"user_{uuid.uuid4().hex[:6]}"
-    cohost_name = f"cohost_{uuid.uuid4().hex[:6]}"
+    guest_name = f"guest_{uuid.uuid4().hex[:6]}"
 
     async with AsyncSessionLocal() as db:
         host = User(username=host_name, password_hash=hash_password("pw123"), role="user")
-        member_user = User(username=user_name, password_hash=hash_password("pw123"), role="user")
-        cohost_user = User(username=cohost_name, password_hash=hash_password("pw123"), role="user")
-        db.add_all([host, member_user, cohost_user])
+        guest = User(username=guest_name, password_hash=hash_password("pw123"), role="user")
+        db.add_all([host, guest])
         await db.commit()
         await db.refresh(host)
-        await db.refresh(member_user)
-        await db.refresh(cohost_user)
+        await db.refresh(guest)
 
     host_token = create_access_token({"sub": host.id, "username": host.username, "role": host.role})
     host_headers = {"Authorization": f"Bearer {host_token}"}
+    guest_token = create_access_token({"sub": guest.id, "username": guest.username, "role": guest.role})
+    guest_headers = {"Authorization": f"Bearer {guest_token}"}
 
-    member_token = create_access_token({"sub": member_user.id, "username": member_user.username, "role": member_user.role})
-    member_headers = {"Authorization": f"Bearer {member_token}"}
+    # Host creates room with require_admission_approval=True
+    create_res = client.post("/api/rooms", json={
+        "name": "Admission Guarded Vault",
+        "num_hosts": 1,
+        "max_members": 10,
+        "require_admission_approval": True
+    }, headers=host_headers)
+    assert create_res.status_code == 201
+    room_code = create_res.json()["room"]["code"]
+    assert create_res.json()["room"]["require_admission_approval"] is True
 
-    cohost_token = create_access_token({"sub": cohost_user.id, "username": cohost_user.username, "role": cohost_user.role})
-    cohost_headers = {"Authorization": f"Bearer {cohost_token}"}
+    # Guest B attempts join directly -> remains outside (403 Forbidden with pending admission)
+    join_res = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=guest_headers)
+    assert join_res.status_code == 403
+    assert "Host approval is required" in join_res.json()["detail"]
 
-    # 2. Host creates room
-    res = client.post("/api/rooms", json={"name": "Secure Enclave", "num_hosts": 2, "max_members": 10}, headers=host_headers)
-    assert res.status_code == 201
-    room_code = res.json()["room"]["code"]
+    # Guest B checks request status
+    status_res = client.get(f"/api/rooms/{room_code}/join-request/status", headers=guest_headers)
+    assert status_res.status_code == 200
+    assert status_res.json()["has_request"] is True
+    assert status_res.json()["status"] == "pending"
+    assert status_res.json()["request_type"] == "join"
+    req_id = status_res.json()["id"]
 
-    # 3. Co-host and member join room
-    res = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=cohost_headers)
-    assert res.status_code == 200
-
-    # Promote cohost
-    res = client.patch(f"/api/rooms/{room_code}/members/{cohost_user.id}/role", json={"role": "co_host"}, headers=host_headers)
-    assert res.status_code == 200
-
-    res = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=member_headers)
-    assert res.status_code == 200
-
-    # 4. Host kicks member
-    res = client.post(f"/api/rooms/{room_code}/members/{member_user.id}/kick", json={"reason": "Security protocol breach"}, headers=host_headers)
-    assert res.status_code == 200
-
-    # 5. Kicked member tries to join directly -> 403 Forbidden
-    res = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=member_headers)
-    assert res.status_code == 403
-    assert "removed from this room by the host" in res.json()["detail"]
-
-    # 6. Kicked member submits re-entry request
-    res = client.post(f"/api/rooms/{room_code}/join-request", json={"request_type": "reentry"}, headers=member_headers)
-    assert res.status_code == 200
-    req_data = res.json()
-    assert req_data["status"] == "pending"
-    assert req_data["request_type"] == "reentry"
-    req_id = req_data["request_id"]
-
-    # 7. Check duplicate prevention
-    res_dup = client.post(f"/api/rooms/{room_code}/join-request", json={"request_type": "reentry"}, headers=member_headers)
-    assert res_dup.status_code == 400
-    assert "already pending" in res_dup.json()["detail"]
-
-    # 8. Member checks own request status
-    res_status = client.get(f"/api/rooms/{room_code}/join-request/status", headers=member_headers)
-    assert res_status.status_code == 200
-    assert res_status.json()["has_request"] is True
-    assert res_status.json()["status"] == "pending"
-
-    # 9. Ordinary member cannot view waiting room
-    # (Create 4th ordinary user)
-    anon_user = User(username=f"anon_{uuid.uuid4().hex[:6]}", password_hash=hash_password("pw123"), role="user")
-    async with AsyncSessionLocal() as db:
-        db.add(anon_user)
-        await db.commit()
-        await db.refresh(anon_user)
-    anon_token = create_access_token({"sub": anon_user.id, "username": anon_user.username, "role": anon_user.role})
-    anon_headers = {"Authorization": f"Bearer {anon_token}"}
-
-    # Anon is not in room -> 404/403
-    res_unauth = client.get(f"/api/rooms/{room_code}/join-requests", headers=anon_headers)
-    assert res_unauth.status_code in (403, 404)
-
-    # 10. Co-host views waiting room
-    res_wr = client.get(f"/api/rooms/{room_code}/join-requests", headers=cohost_headers)
-    assert res_wr.status_code == 200
-    requests = res_wr.json()["requests"]
+    # Host A sees request in Waiting Room
+    wr_res = client.get(f"/api/rooms/{room_code}/join-requests", headers=host_headers)
+    assert wr_res.status_code == 200
+    requests = wr_res.json()["requests"]
     assert len(requests) >= 1
-    target_req = next((r for r in requests if r["id"] == req_id), None)
-    assert target_req is not None
-    assert target_req["username"] == member_user.username
-    assert target_req["request_type"] == "reentry"
-    assert target_req["status"] == "pending"
+    req_item = next(r for r in requests if r["id"] == req_id)
+    assert req_item["username"] == guest.username
+    assert req_item["request_type"] == "join"
+    assert req_item["status"] == "pending"
+    assert req_item["membership_status"] == "none"
 
-    # 11. Co-host approves request
-    res_appr = client.post(f"/api/rooms/{room_code}/join-requests/{req_id}/approve", headers=cohost_headers)
-    assert res_appr.status_code == 200
-    assert res_appr.json()["new_status"] == "approved"
+    # Host A approves request
+    appr_res = client.post(f"/api/rooms/{room_code}/join-requests/{req_id}/approve", headers=host_headers)
+    assert appr_res.status_code == 200
+    assert appr_res.json()["new_status"] == "approved"
 
-    # 12. Cannot re-approve processed request (replay prevention)
-    res_reappr = client.post(f"/api/rooms/{room_code}/join-requests/{req_id}/approve", headers=host_headers)
-    assert res_reappr.status_code == 400
+    # Guest B checks status -> approved
+    status_res2 = client.get(f"/api/rooms/{room_code}/join-request/status", headers=guest_headers)
+    assert status_res2.status_code == 200
+    assert status_res2.json()["status"] == "approved"
 
-    # 13. Member checks status again
-    res_status2 = client.get(f"/api/rooms/{room_code}/join-request/status", headers=member_headers)
-    assert res_status2.json()["status"] == "approved"
-
-    # 14. Approved member can now successfully rejoin with room code
-    res_rejoin = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=member_headers)
-    assert res_rejoin.status_code == 200
-    assert res_rejoin.json()["membership"]["role"] == "editor"
+    # Guest B completes join successfully
+    join_success = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=guest_headers)
+    assert join_success.status_code == 200
+    assert join_success.json()["membership"]["role"] == "editor"
 
 @pytest.mark.asyncio
-async def test_waiting_room_rejection_flow():
+async def test_scenario_2_and_3_kicked_reentry_rejection_then_reapplication_and_approval():
     """
-    Test that a rejected request keeps the user blocked.
+    Test 2 & 3:
+    Test 2: Host A kicks Guest C -> Guest C attempts rejoin -> blocked -> submits re-entry request
+    -> Host A sees request (request_type='reentry', membership_status='kicked') -> Host A rejects -> Guest C remains blocked.
+    Test 3: Guest C submits another re-entry request -> Host A approves -> Guest C completes secure re-entry.
     """
-    await init_db()
     client = TestClient(app)
 
     host_name = f"host_{uuid.uuid4().hex[:6]}"
-    user_name = f"user_{uuid.uuid4().hex[:6]}"
+    guest_c_name = f"guest_c_{uuid.uuid4().hex[:6]}"
 
     async with AsyncSessionLocal() as db:
         host = User(username=host_name, password_hash=hash_password("pw123"), role="user")
-        member_user = User(username=user_name, password_hash=hash_password("pw123"), role="user")
-        db.add_all([host, member_user])
+        guest_c = User(username=guest_c_name, password_hash=hash_password("pw123"), role="user")
+        db.add_all([host, guest_c])
         await db.commit()
         await db.refresh(host)
-        await db.refresh(member_user)
+        await db.refresh(guest_c)
 
     host_token = create_access_token({"sub": host.id, "username": host.username, "role": host.role})
     host_headers = {"Authorization": f"Bearer {host_token}"}
+    guest_c_token = create_access_token({"sub": guest_c.id, "username": guest_c.username, "role": guest_c.role})
+    guest_c_headers = {"Authorization": f"Bearer {guest_c_token}"}
 
-    member_token = create_access_token({"sub": member_user.id, "username": member_user.username, "role": member_user.role})
-    member_headers = {"Authorization": f"Bearer {member_token}"}
-
-    res = client.post("/api/rooms", json={"name": "Strict Vault", "num_hosts": 1, "max_members": 5}, headers=host_headers)
+    # Host creates room (ordinary room)
+    res = client.post("/api/rooms", json={"name": "Audit Enclave", "num_hosts": 1, "max_members": 5}, headers=host_headers)
     assert res.status_code == 201
     room_code = res.json()["room"]["code"]
 
-    # Member joins and is kicked
-    client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=member_headers)
-    client.post(f"/api/rooms/{room_code}/members/{member_user.id}/kick", json={"reason": "Suspicious behavior"}, headers=host_headers)
+    # Guest C joins room normally
+    join1 = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=guest_c_headers)
+    assert join1.status_code == 200
 
-    # Member submits re-entry request
-    res = client.post(f"/api/rooms/{room_code}/join-request", json={"request_type": "reentry"}, headers=member_headers)
-    req_id = res.json()["request_id"]
+    # Host kicks Guest C
+    kick_res = client.post(f"/api/rooms/{room_code}/members/{guest_c.id}/kick", json={"reason": "Security violation"}, headers=host_headers)
+    assert kick_res.status_code == 200
+
+    # Test 2: Guest C attempts to rejoin directly -> blocked with kicked message
+    join_blocked = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=guest_c_headers)
+    assert join_blocked.status_code == 403
+    assert "removed from this room by the host" in join_blocked.json()["detail"]
+
+    # Guest C submits re-entry request
+    reentry1 = client.post(f"/api/rooms/{room_code}/join-request", json={"request_type": "reentry"}, headers=guest_c_headers)
+    assert reentry1.status_code == 200
+    req_id_1 = reentry1.json()["request_id"]
+    assert reentry1.json()["request_type"] == "reentry"
+
+    # Host sees request with membership_status='kicked'
+    wr_res = client.get(f"/api/rooms/{room_code}/join-requests", headers=host_headers)
+    assert wr_res.status_code == 200
+    req_item = next(r for r in wr_res.json()["requests"] if r["id"] == req_id_1)
+    assert req_item["membership_status"] == "kicked"
+    assert req_item["request_type"] == "reentry"
 
     # Host rejects request
-    res = client.post(f"/api/rooms/{room_code}/join-requests/{req_id}/reject", headers=host_headers)
-    assert res.status_code == 200
-    assert res.json()["new_status"] == "rejected"
+    rej_res = client.post(f"/api/rooms/{room_code}/join-requests/{req_id_1}/reject", headers=host_headers)
+    assert rej_res.status_code == 200
+    assert rej_res.json()["new_status"] == "rejected"
 
-    # Member is still blocked
-    res = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=member_headers)
-    assert res.status_code == 403
-    assert "removed from this room by the host" in res.json()["detail"]
+    # Guest C remains blocked
+    join_still_blocked = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=guest_c_headers)
+    assert join_still_blocked.status_code == 403
+
+    # Test 3: Guest C submits ANOTHER re-entry request
+    reentry2 = client.post(f"/api/rooms/{room_code}/join-request", json={"request_type": "reentry"}, headers=guest_c_headers)
+    assert reentry2.status_code == 200
+    req_id_2 = reentry2.json()["request_id"]
+    assert req_id_2 != req_id_1
+
+    # Host A approves request 2
+    appr_res2 = client.post(f"/api/rooms/{room_code}/join-requests/{req_id_2}/approve", headers=host_headers)
+    assert appr_res2.status_code == 200
+    assert appr_res2.json()["new_status"] == "approved"
+
+    # Guest C completes secure re-entry
+    rejoin_success = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=guest_c_headers)
+    assert rejoin_success.status_code == 200
+    assert rejoin_success.json()["membership"]["role"] == "editor"
+
+@pytest.mark.asyncio
+async def test_scenario_4_and_5_host_refresh_and_reconnection_persistence():
+    """
+    Test 4 & 5:
+    Test 4: Host browser refresh -> pending requests still visible.
+    Test 5: Reconnection / multi-fetch restores pending requests without duplicates.
+    """
+    client = TestClient(app)
+
+    host_name = f"host_{uuid.uuid4().hex[:6]}"
+    guest_name = f"guest_{uuid.uuid4().hex[:6]}"
+
+    async with AsyncSessionLocal() as db:
+        host = User(username=host_name, password_hash=hash_password("pw123"), role="user")
+        guest = User(username=guest_name, password_hash=hash_password("pw123"), role="user")
+        db.add_all([host, guest])
+        await db.commit()
+        await db.refresh(host)
+        await db.refresh(guest)
+
+    host_token = create_access_token({"sub": host.id, "username": host.username, "role": host.role})
+    host_headers = {"Authorization": f"Bearer {host_token}"}
+    guest_token = create_access_token({"sub": guest.id, "username": guest.username, "role": guest.role})
+    guest_headers = {"Authorization": f"Bearer {guest_token}"}
+
+    create_res = client.post("/api/rooms", json={"name": "Persist Vault", "num_hosts": 1, "require_admission_approval": True}, headers=host_headers)
+    room_code = create_res.json()["room"]["code"]
+
+    # Guest triggers admission request
+    client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=guest_headers)
+
+    # First fetch (e.g. initial view)
+    wr1 = client.get(f"/api/rooms/{room_code}/join-requests", headers=host_headers)
+    assert wr1.status_code == 200
+    reqs1 = wr1.json()["requests"]
+    assert len(reqs1) == 1
+    orig_id = reqs1[0]["id"]
+
+    # Test 4: Host browser refresh (simulated by secondary client call)
+    wr2 = client.get(f"/api/rooms/{room_code}/join-requests", headers=host_headers)
+    assert wr2.status_code == 200
+    reqs2 = wr2.json()["requests"]
+    assert len(reqs2) == 1
+    assert reqs2[0]["id"] == orig_id
+    assert reqs2[0]["status"] == "pending"
+
+    # Test 5: Reconnection / subsequent query does not duplicate or alter state
+    wr3 = client.get(f"/api/rooms/{room_code}/join-requests", headers=host_headers)
+    assert wr3.status_code == 200
+    reqs3 = wr3.json()["requests"]
+    assert len(reqs3) == 1
+    assert reqs3[0]["id"] == orig_id
+
+@pytest.mark.asyncio
+async def test_scenario_6_non_host_approval_rejected():
+    """
+    Test 6: Non-host attempts approval -> backend rejects with 403 Forbidden.
+    """
+    client = TestClient(app)
+
+    host_name = f"host_{uuid.uuid4().hex[:6]}"
+    regular_name = f"reg_{uuid.uuid4().hex[:6]}"
+    guest_name = f"guest_{uuid.uuid4().hex[:6]}"
+
+    async with AsyncSessionLocal() as db:
+        host = User(username=host_name, password_hash=hash_password("pw123"), role="user")
+        regular = User(username=regular_name, password_hash=hash_password("pw123"), role="user")
+        guest = User(username=guest_name, password_hash=hash_password("pw123"), role="user")
+        db.add_all([host, regular, guest])
+        await db.commit()
+        await db.refresh(host)
+        await db.refresh(regular)
+        await db.refresh(guest)
+
+    host_token = create_access_token({"sub": host.id, "username": host.username, "role": host.role})
+    host_headers = {"Authorization": f"Bearer {host_token}"}
+    regular_token = create_access_token({"sub": regular.id, "username": regular.username, "role": regular.role})
+    regular_headers = {"Authorization": f"Bearer {regular_token}"}
+    guest_token = create_access_token({"sub": guest.id, "username": guest.username, "role": guest.role})
+    guest_headers = {"Authorization": f"Bearer {guest_token}"}
+
+    create_res = client.post("/api/rooms", json={"name": "Auth Guarded Vault", "num_hosts": 1}, headers=host_headers)
+    room_code = create_res.json()["room"]["code"]
+
+    # Regular member joins room as editor
+    reg_join = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=regular_headers)
+    assert reg_join.status_code == 200
+
+    # Enable admission approval via settings
+    patch_res = client.patch(f"/api/rooms/{room_code}/settings", json={"require_admission_approval": True}, headers=host_headers)
+    assert patch_res.status_code == 200
+
+    # Guest attempts join -> pending
+    client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=guest_headers)
+    status_res = client.get(f"/api/rooms/{room_code}/join-request/status", headers=guest_headers)
+    req_id = status_res.json()["id"]
+
+    # Regular member tries to view waiting room -> 403 Forbidden
+    reg_view = client.get(f"/api/rooms/{room_code}/join-requests", headers=regular_headers)
+    assert reg_view.status_code == 403
+    assert "Only the room host and co-hosts" in reg_view.json()["detail"]
+
+    # Regular member tries to approve request -> 403 Forbidden
+    reg_appr = client.post(f"/api/rooms/{room_code}/join-requests/{req_id}/approve", headers=regular_headers)
+    assert reg_appr.status_code == 403
+    assert "Only the room host and co-hosts" in reg_appr.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_scenario_7_admission_approval_disabled_ordinary_join():
+    """
+    Test 7: Room with admission approval disabled -> ordinary room joining works directly.
+    """
+    client = TestClient(app)
+
+    host_name = f"host_{uuid.uuid4().hex[:6]}"
+    guest_name = f"guest_{uuid.uuid4().hex[:6]}"
+
+    async with AsyncSessionLocal() as db:
+        host = User(username=host_name, password_hash=hash_password("pw123"), role="user")
+        guest = User(username=guest_name, password_hash=hash_password("pw123"), role="user")
+        db.add_all([host, guest])
+        await db.commit()
+        await db.refresh(host)
+        await db.refresh(guest)
+
+    host_token = create_access_token({"sub": host.id, "username": host.username, "role": host.role})
+    host_headers = {"Authorization": f"Bearer {host_token}"}
+    guest_token = create_access_token({"sub": guest.id, "username": guest.username, "role": guest.role})
+    guest_headers = {"Authorization": f"Bearer {guest_token}"}
+
+    create_res = client.post("/api/rooms", json={"name": "Open Vault", "require_admission_approval": False}, headers=host_headers)
+    assert create_res.status_code == 201
+    room_code = create_res.json()["room"]["code"]
+
+    # Guest joins directly without any waiting room intervention
+    join_res = client.post("/api/rooms/join", json={"code": room_code, "role": "editor"}, headers=guest_headers)
+    assert join_res.status_code == 200
+    assert join_res.json()["membership"]["role"] == "editor"

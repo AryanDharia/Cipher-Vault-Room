@@ -45,6 +45,7 @@ class Room(Base):
     max_members = Column(Integer, default=20, nullable=False)
     threshold_required = Column(Integer, default=2, nullable=False)
     threshold_total = Column(Integer, default=3, nullable=False)
+    require_admission_approval = Column(Boolean, default=False, nullable=False)
 
     members = relationship("RoomMember", back_populates="room", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="room", cascade="all, delete-orphan")

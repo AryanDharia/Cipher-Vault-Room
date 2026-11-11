@@ -149,6 +149,31 @@ async def websocket_endpoint(
             return
 
         if not member:
+            if getattr(room, "require_admission_approval", False) and user_id != room.creator_id:
+                from app.database.models import WaitingRoomRequest
+                req_res = await db.execute(
+                    select(WaitingRoomRequest)
+                    .where(
+                        WaitingRoomRequest.room_id == room.id,
+                        WaitingRoomRequest.user_id == user_id,
+                        WaitingRoomRequest.status == "approved"
+                    )
+                    .order_by(WaitingRoomRequest.created_at.desc())
+                    .limit(1)
+                )
+                approved_req = req_res.scalars().first()
+                if not approved_req:
+                    logger.warning(f"[WS ADMISSION PENDING] User '{username}' ({user_id}) cannot connect via WS to room '{code}' without host approval.")
+                    try:
+                        await websocket.send_json({
+                            "type": "ERROR",
+                            "message": "Host approval is required to join this room."
+                        })
+                        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Admission approval required")
+                    except Exception:
+                        pass
+                    return
+
             if room.is_locked:
                 logger.warning(f"[WS ROOM LOCKED] Room '{code}' is locked. User {username} cannot join.")
                 try:

@@ -77,7 +77,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     try {
       setLoadingRequests(true);
       const reqs = await api.getJoinRequests(roomCode);
-      setJoinRequests(Array.isArray(reqs) ? reqs : []);
+      const list = Array.isArray(reqs) ? reqs : ((reqs as any)?.requests || []);
+      setJoinRequests(list);
     } catch {
       // Ignore if unprivileged or network error
     } finally {

@@ -18,6 +18,8 @@ class CreateRoomRequest(BaseModel):
     max_members: Optional[int] = Field(20, ge=2, le=100)
     threshold_required: Optional[int] = Field(None, ge=1, le=20)
     threshold_total: Optional[int] = Field(None, ge=1, le=20)
+    require_admission_approval: Optional[bool] = None
+    admission_approval_required: Optional[bool] = None
 
 class CreateJoinRequestPayload(BaseModel):
     request_type: Optional[str] = "join"
@@ -35,6 +37,7 @@ class KickMemberRequest(BaseModel):
 class UpdateRoomSettingsRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=100)
     max_members: Optional[int] = Field(None, ge=2, le=100)
+    require_admission_approval: Optional[bool] = None
 
 class LockRoomRequest(BaseModel):
     lock: bool
@@ -76,13 +79,20 @@ async def create_room(
             detail=f"Total key holders ({th_tot}) cannot exceed total room members allowed ({max_mem})"
         )
 
+    req_approval = False
+    if req.require_admission_approval is not None:
+        req_approval = req.require_admission_approval
+    elif req.admission_approval_required is not None:
+        req_approval = req.admission_approval_required
+
     room = await RoomService.create_room(
         db=db,
         creator=user,
         name=req.name,
         threshold_required=th_req,
         threshold_total=th_tot,
-        max_members=max_mem
+        max_members=max_mem,
+        require_admission_approval=req_approval
     )
     members = await RoomService.get_room_members(db, room.id)
     return {
@@ -94,6 +104,7 @@ async def create_room(
             "max_members": room.max_members,
             "threshold_required": room.threshold_required,
             "threshold_total": room.threshold_total,
+            "require_admission_approval": room.require_admission_approval,
             "created_at": room.created_at.isoformat(),
             "is_active": room.is_active,
             "is_locked": room.is_locked
@@ -105,6 +116,7 @@ async def create_room(
         "max_members": room.max_members,
         "threshold_required": room.threshold_required,
         "threshold_total": room.threshold_total,
+        "require_admission_approval": room.require_admission_approval,
         "created_at": room.created_at.isoformat(),
         "is_active": room.is_active,
         "is_locked": room.is_locked,
@@ -148,6 +160,7 @@ async def join_room(
             "lock_reason": room.lock_reason,
             "threshold_required": room.threshold_required,
             "threshold_total": room.threshold_total,
+            "require_admission_approval": room.require_admission_approval,
             "created_at": room.created_at.isoformat()
         },
         "membership": {
@@ -183,6 +196,7 @@ async def get_room(
             "lock_reason": room.lock_reason,
             "threshold_required": room.threshold_required,
             "threshold_total": room.threshold_total,
+            "require_admission_approval": room.require_admission_approval,
             "created_at": room.created_at.isoformat()
         },
         "current_user_role": member.role,
@@ -367,6 +381,17 @@ async def kick_member(
     # Mark member as kicked in database
     target_member.is_kicked = True
 
+    # Invalidate / supersede any previous waiting room requests for this user in this room
+    prev_reqs_res = await db.execute(
+        select(WaitingRoomRequest).where(
+            WaitingRoomRequest.room_id == room.id,
+            WaitingRoomRequest.user_id == target_user_id,
+            WaitingRoomRequest.status.in_(["pending", "approved"])
+        )
+    )
+    for prev_req in prev_reqs_res.scalars().all():
+        prev_req.status = "superseded"
+
     audit = AuditEvent(
         room_id=room.id,
         user_id=user.id,
@@ -448,6 +473,9 @@ async def update_room_settings(
     if req.name is not None and req.name.strip():
         room.name = req.name.strip()
 
+    if req.require_admission_approval is not None:
+        room.require_admission_approval = req.require_admission_approval
+
     await db.commit()
     await db.refresh(room)
 
@@ -456,13 +484,15 @@ async def update_room_settings(
         "room_code": room.code,
         "name": room.name,
         "max_members": room.max_members,
+        "require_admission_approval": room.require_admission_approval,
         "by_username": user.username
     })
 
     return {
         "status": "success",
         "name": room.name,
-        "max_members": room.max_members
+        "max_members": room.max_members,
+        "require_admission_approval": room.require_admission_approval
     }
 
 @router.delete("/{code}")
@@ -540,9 +570,9 @@ async def create_join_request(
             WaitingRoomRequest.room_id == room.id,
             WaitingRoomRequest.user_id == user.id,
             WaitingRoomRequest.status == "pending"
-        )
+        ).limit(1)
     )
-    pending_req = pend_res.scalar_one_or_none()
+    pending_req = pend_res.scalars().first()
     if pending_req:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -620,8 +650,22 @@ async def get_join_requests(
     )
     rows = res.all()
 
+    # Query members to determine membership_status accurately
+    mems_res = await db.execute(
+        select(RoomMember).where(RoomMember.room_id == room.id)
+    )
+    members_map = {m.user_id: m for m in mems_res.scalars().all()}
+
     requests_data = []
     for req_rec, uname in rows:
+        m = members_map.get(req_rec.user_id)
+        if m and m.is_kicked:
+            mem_status = "kicked"
+        elif m and not m.is_kicked:
+            mem_status = "active"
+        else:
+            mem_status = "none"
+
         requests_data.append({
             "id": req_rec.id,
             "room_id": req_rec.room_id,
@@ -630,6 +674,7 @@ async def get_join_requests(
             "username": uname,
             "request_type": req_rec.request_type,
             "status": req_rec.status,
+            "membership_status": mem_status,
             "created_at": req_rec.created_at.isoformat(),
             "reviewed_by": req_rec.reviewed_by,
             "reviewed_at": req_rec.reviewed_at.isoformat() if req_rec.reviewed_at else None
@@ -807,14 +852,26 @@ async def get_my_join_request_status(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
 
+    mem_res = await db.execute(
+        select(RoomMember).where(RoomMember.room_id == room.id, RoomMember.user_id == user.id)
+    )
+    user_mem = mem_res.scalar_one_or_none()
+    is_kicked = bool(user_mem and user_mem.is_kicked)
+
     res = await db.execute(
         select(WaitingRoomRequest)
         .where(WaitingRoomRequest.room_id == room.id, WaitingRoomRequest.user_id == user.id)
         .order_by(WaitingRoomRequest.created_at.desc())
+        .limit(1)
     )
-    latest_req = res.scalar_one_or_none()
+    latest_req = res.scalars().first()
     if not latest_req:
-        return {"has_request": False, "status": None}
+        return {
+            "has_request": False,
+            "status": None,
+            "is_kicked": is_kicked,
+            "require_admission_approval": room.require_admission_approval
+        }
 
     return {
         "has_request": True,
@@ -822,6 +879,8 @@ async def get_my_join_request_status(
         "room_code": room.code,
         "request_type": latest_req.request_type,
         "status": latest_req.status,
+        "is_kicked": is_kicked,
+        "require_admission_approval": room.require_admission_approval,
         "created_at": latest_req.created_at.isoformat(),
         "reviewed_at": latest_req.reviewed_at.isoformat() if latest_req.reviewed_at else None
     }

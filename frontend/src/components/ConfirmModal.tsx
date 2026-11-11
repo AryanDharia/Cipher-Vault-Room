@@ -428,8 +428,9 @@ interface RoomSettingsModalProps {
   roomCode: string;
   currentName: string;
   currentMaxMembers: number;
+  currentRequireAdmissionApproval?: boolean;
   onClose: () => void;
-  onConfirm: (settings: { name?: string; max_members?: number }) => Promise<void>;
+  onConfirm: (settings: { name?: string; max_members?: number; require_admission_approval?: boolean }) => Promise<void>;
 }
 
 export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
@@ -437,11 +438,13 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
   roomCode,
   currentName,
   currentMaxMembers,
+  currentRequireAdmissionApproval = false,
   onClose,
   onConfirm,
 }) => {
   const [name, setName] = useState(currentName);
   const [maxMembers, setMaxMembers] = useState(currentMaxMembers || 10);
+  const [requireAdmissionApproval, setRequireAdmissionApproval] = useState(currentRequireAdmissionApproval);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -452,7 +455,11 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
     setError(null);
     setLoading(true);
     try {
-      await onConfirm({ name: name.trim(), max_members: Number(maxMembers) });
+      await onConfirm({
+        name: name.trim(),
+        max_members: Number(maxMembers),
+        require_admission_approval: requireAdmissionApproval,
+      });
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to update settings');
@@ -524,6 +531,25 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               <option value={100}>100 Members (Organization Wide)</option>
             </select>
             <p className="text-[10px] text-slate-500 mt-1.5 font-mono">Capacity adjustments propagate immediately across connected peers.</p>
+          </div>
+
+          <div className="pt-1">
+            <label className="flex items-start space-x-3 cursor-pointer select-none p-3 rounded-xl bg-[#05090B] border border-[rgba(100,220,205,0.18)] hover:border-[#21D4E5]/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={requireAdmissionApproval}
+                onChange={(e) => setRequireAdmissionApproval(e.target.checked)}
+                className="mt-0.5 rounded border-slate-700 text-[#10BFA5] focus:ring-[#21D4E5] focus:ring-offset-0 bg-[#070D10]"
+              />
+              <div className="text-left">
+                <span className="text-xs font-mono font-semibold text-slate-200 block">
+                  Require Host Approval (Waiting Room)
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+                  Hold new participants in a waiting room until approved by the room host.
+                </span>
+              </div>
+            </label>
           </div>
 
           <div className="flex items-center justify-end space-x-3 pt-2">

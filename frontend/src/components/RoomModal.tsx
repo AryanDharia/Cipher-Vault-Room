@@ -57,6 +57,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   // Simplified UI controls
   const [numHosts, setNumHosts] = useState(2);
   const [maxMembers, setMaxMembers] = useState(10);
+  const [requireAdmissionApproval, setRequireAdmissionApproval] = useState(false);
 
   // Advanced Security (Threshold Consensus)
   const [showAdvancedSecurity, setShowAdvancedSecurity] = useState(defaultShowAdvanced);
@@ -72,6 +73,10 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   const [reentrySubmitting, setReentrySubmitting] = useState(false);
   const pollTimerRef = useRef<any>(null);
 
+  // Admission authorization request state (for new guests)
+  const [admissionStatus, setAdmissionStatus] = useState<'idle' | 'pending' | 'approved' | 'rejected'>('idle');
+  const admissionPollTimerRef = useRef<any>(null);
+
   const cleanCurrentCode = roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
   const stopReentryPolling = () => {
@@ -81,15 +86,59 @@ export const RoomModal: React.FC<RoomModalProps> = ({
     }
   };
 
+  const stopAdmissionPolling = () => {
+    if (admissionPollTimerRef.current) {
+      clearInterval(admissionPollTimerRef.current);
+      admissionPollTimerRef.current = null;
+    }
+  };
+
   useEffect(() => {
-    return () => stopReentryPolling();
+    return () => {
+      stopReentryPolling();
+      stopAdmissionPolling();
+    };
   }, []);
 
-  // Reset re-entry state if roomCode or mode changes
+  // Reset re-entry and admission state if roomCode or mode changes
   useEffect(() => {
     setReentryStatus('idle');
+    setAdmissionStatus('idle');
     stopReentryPolling();
+    stopAdmissionPolling();
   }, [roomCode, mode]);
+
+  const startAdmissionPolling = (codeToPoll: string) => {
+    stopAdmissionPolling();
+    admissionPollTimerRef.current = setInterval(async () => {
+      try {
+        const res = await api.getJoinRequestStatus(codeToPoll);
+        if (res && res.has_request) {
+          if (res.status === 'approved') {
+            setAdmissionStatus('approved');
+            setError(null);
+            stopAdmissionPolling();
+            // Automatically complete room join if passphrase is ready
+            if (passphrase.trim()) {
+              try {
+                const joinRes = await api.joinRoom({ code: codeToPoll, role: 'editor' });
+                const { key } = await deriveRoomKey(passphrase.trim(), codeToPoll);
+                await onRoomJoined(joinRes, key, passphrase.trim());
+              } catch (autoErr: any) {
+                setError(autoErr.message || 'Admission approved! Click Join Encrypted Room to enter.');
+              }
+            }
+          } else if (res.status === 'rejected') {
+            setAdmissionStatus('rejected');
+            setError('Your admission request was declined by the room host.');
+            stopAdmissionPolling();
+          }
+        }
+      } catch {
+        // ignore transient poll error
+      }
+    }, 2500);
+  };
 
   const handleRequestReentry = async () => {
     if (cleanCurrentCode.length !== 6) {
@@ -208,6 +257,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
           max_members: maxMembers,
           threshold_required: thresholdReq,
           threshold_total: thresholdTot,
+          require_admission_approval: requireAdmissionApproval,
         });
 
         const activeCode = res.code || res.room?.code;
@@ -236,7 +286,18 @@ export const RoomModal: React.FC<RoomModalProps> = ({
         await onRoomJoined(res, key, passphrase.trim());
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to process room action');
+      const msg = err.message || 'Failed to process room action';
+      setError(msg);
+      if (
+        msg.toLowerCase().includes('host approval is required') ||
+        msg.toLowerCase().includes('admission request')
+      ) {
+        setAdmissionStatus('pending');
+        const cleanCode = roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (cleanCode.length === 6) {
+          startAdmissionPolling(cleanCode);
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -248,6 +309,12 @@ export const RoomModal: React.FC<RoomModalProps> = ({
     error.toLowerCase().includes('cannot rejoin without authorization') ||
     error.toLowerCase().includes('kicked')
   );
+  const isAdmissionPending = !isCreate && (admissionStatus === 'pending' || (
+    !!error && (
+      error.toLowerCase().includes('host approval is required') ||
+      error.toLowerCase().includes('admission request')
+    )
+  ));
 
   return (
     <div className="vr-room" role="dialog" aria-modal="true" aria-labelledby="vr-room-heading">
@@ -440,10 +507,77 @@ export const RoomModal: React.FC<RoomModalProps> = ({
         </div>
 
         {/* Error Alert Banner */}
-        {error && !isKickedError && (
+        {error && !isKickedError && !isAdmissionPending && (
           <div className="vr-room__error" role="alert">
             <AlertTriangle size={15} aria-hidden="true" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {/* Waiting Room Admission Panel for New Guests */}
+        {!isCreate && !isKickedError && (isAdmissionPending || admissionStatus === 'approved' || admissionStatus === 'rejected') && (
+          <div className="vr-room__reentry-card" role="region" aria-label="Waiting Room admission status">
+            <div className="vr-room__reentry-header">
+              {admissionStatus === 'approved' ? (
+                <CheckCircle size={15} className="vr-room__reentry-icon text-emerald-400" aria-hidden="true" />
+              ) : admissionStatus === 'rejected' ? (
+                <XCircle size={15} className="vr-room__reentry-icon text-red-400" aria-hidden="true" />
+              ) : (
+                <Clock size={15} className="vr-room__reentry-icon text-[#21d4e5]" aria-hidden="true" />
+              )}
+              <span className={`vr-room__reentry-title ${
+                admissionStatus === 'approved' ? 'text-emerald-400' :
+                admissionStatus === 'rejected' ? 'text-red-400' :
+                'text-[#21d4e5]'
+              }`}>
+                {admissionStatus === 'approved' ? 'Host Approved Your Entry!' :
+                 admissionStatus === 'rejected' ? 'Admission Request Declined' :
+                 'Admission Pending Host Approval'}
+              </span>
+            </div>
+            <p className="vr-room__reentry-desc">
+              {admissionStatus === 'approved'
+                ? 'Your admission was approved by the host. Enter your passphrase and click "Join Encrypted Room" below.'
+                : admissionStatus === 'rejected'
+                ? 'The room host declined your admission request for this room.'
+                : 'Host approval is required to join this room. Your admission request has been sent to the Waiting Room and will update automatically once reviewed.'}
+            </p>
+
+            {admissionStatus === 'pending' && (
+              <div className="vr-room__reentry-status vr-room__reentry-status--pending">
+                <Clock size={15} className="vr-room__spinner-icon" aria-hidden="true" />
+                <div>
+                  <div className="vr-room__status-bold">Waiting for host review...</div>
+                  <div className="vr-room__status-hint">
+                    Your passphrase remains secure locally. You will be admitted automatically when approved.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {admissionStatus === 'approved' && (
+              <div className="vr-room__reentry-status vr-room__reentry-status--approved">
+                <CheckCircle size={15} aria-hidden="true" />
+                <div>
+                  <div className="vr-room__status-bold text-emerald-400">Admission Authorized!</div>
+                  <div className="vr-room__status-hint">
+                    Click "Join Encrypted Room" below to enter the secure room.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {admissionStatus === 'rejected' && (
+              <div className="vr-room__reentry-status vr-room__reentry-status--rejected">
+                <XCircle size={15} aria-hidden="true" />
+                <div>
+                  <div className="vr-room__status-bold text-red-400">Request Declined</div>
+                  <div className="vr-room__status-hint">
+                    The host did not approve entry for this room code.
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -589,6 +723,29 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                   </div>
                   <span className="vr-room__field-hint">Maximum room capacity</span>
                 </div>
+              </div>
+
+              {/* Require Host Approval / Waiting Room */}
+              <div className="vr-room__field" style={{ marginTop: '0.25rem', marginBottom: '0.5rem' }}>
+                <label className="flex items-center space-x-3 cursor-pointer select-none p-3 rounded-xl bg-[rgba(12,22,25,0.7)] border border-[rgba(100,220,205,0.18)] hover:border-[#21d4e5]/40 transition-colors">
+                  <input
+                    type="checkbox"
+                    id="vr-require-admission"
+                    checked={requireAdmissionApproval}
+                    onChange={(e) => setRequireAdmissionApproval(e.target.checked)}
+                    disabled={loading}
+                    className="w-4 h-4 rounded border-slate-700 text-[#10bfa5] focus:ring-[#21d4e5] focus:ring-offset-0 bg-[#070d10]"
+                  />
+                  <div className="flex-1 text-left">
+                    <span className="text-xs font-mono font-bold text-[#f2f7f7] flex items-center space-x-1.5">
+                      <Shield size={13} className="text-[#21d4e5] mr-1 inline" />
+                      <span>Require Host Approval (Waiting Room)</span>
+                    </span>
+                    <span className="text-[11px] text-[#91a4a7] font-sans block mt-0.5">
+                      Hold new participants outside the active room until reviewed and approved by the room host.
+                    </span>
+                  </div>
+                </label>
               </div>
 
               {/* Advanced Security Disclosure Panel (Threshold Consensus) */}

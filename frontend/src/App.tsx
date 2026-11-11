@@ -27,6 +27,7 @@ export function App() {
   const [isLocked, setIsLocked] = useState(false);
   const [lockReason, setLockReason] = useState<string | null>(null);
   const [maxMembers, setMaxMembers] = useState(20);
+  const [requireAdmissionApproval, setRequireAdmissionApproval] = useState(false);
   const [thresholdRequired, setThresholdRequired] = useState(2);
   const [thresholdTotal, setThresholdTotal] = useState(3);
   const [currentUserRole, setCurrentUserRole] = useState<string>('editor');
@@ -441,6 +442,9 @@ export function App() {
       console.info('[App] ROOM_SETTINGS_UPDATED received:', data);
       if (data.max_members) setMaxMembers(data.max_members);
       if (data.name) setRoomName(data.name);
+      if (data.require_admission_approval !== undefined) {
+        setRequireAdmissionApproval(Boolean(data.require_admission_approval));
+      }
     });
 
     ws.on('WAITING_ROOM_UPDATED', (data) => {
@@ -632,6 +636,7 @@ export function App() {
     setIsLocked(!!r.is_locked);
     setLockReason(r.lock_reason || null);
     setMaxMembers(r.max_members || roomData.max_members || 20);
+    setRequireAdmissionApproval(Boolean(r.require_admission_approval ?? roomData.require_admission_approval));
     setThresholdRequired(r.threshold_required || 2);
     setThresholdTotal(r.threshold_total || 3);
     setCurrentUserRole(roomData.current_user_role || roomData.membership?.role || 'editor');
@@ -661,12 +666,15 @@ export function App() {
     }
   };
 
-  const handleUpdateRoomSettingsConfirm = async (settings: { name?: string; max_members?: number }) => {
+  const handleUpdateRoomSettingsConfirm = async (settings: { name?: string; max_members?: number; require_admission_approval?: boolean }) => {
     if (!roomCode) return;
     try {
       const res = await api.updateRoomSettings(roomCode, settings);
       if (res.max_members) setMaxMembers(res.max_members);
       if (res.name) setRoomName(res.name);
+      if (res.require_admission_approval !== undefined) {
+        setRequireAdmissionApproval(Boolean(res.require_admission_approval));
+      }
       setShowRoomSettingsModal(false);
       setBannerNotification('Room capacity and settings updated successfully.');
     } catch (err: any) {
@@ -1244,6 +1252,7 @@ export function App() {
           roomCode={roomCode}
           currentName={roomName || ''}
           currentMaxMembers={maxMembers}
+          currentRequireAdmissionApproval={requireAdmissionApproval}
           onClose={() => setShowRoomSettingsModal(false)}
           onConfirm={handleUpdateRoomSettingsConfirm}
         />

@@ -32,6 +32,44 @@ test('waiting room: detects kicked / authorization error messages accurately', (
   );
 });
 
+test('waiting room: detects admission pending error messages accurately', () => {
+  const isAdmissionPending = (err) => {
+    if (!err) return false;
+    const lower = err.toLowerCase();
+    return lower.includes('host approval is required') ||
+      lower.includes('admission request');
+  };
+
+  assert.strictEqual(
+    isAdmissionPending('Host approval is required to join this room. An admission request has been submitted to the Waiting Room.'),
+    true
+  );
+  assert.strictEqual(
+    isAdmissionPending('Host approval is required to join this room. Your admission request is pending host review.'),
+    true
+  );
+  assert.strictEqual(
+    isAdmissionPending('Invalid passphrase'),
+    false
+  );
+});
+
+test('waiting room: parses both array and { requests: [...] } safely without state wiping', () => {
+  const parseJoinRequests = (res) => {
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray(res.requests)) return res.requests;
+    return [];
+  };
+
+  const rawArray = [{ id: '1', username: 'guest1' }];
+  const rawObject = { requests: [{ id: '1', username: 'guest1' }] };
+  const rawEmpty = null;
+
+  assert.deepStrictEqual(parseJoinRequests(rawArray), rawArray);
+  assert.deepStrictEqual(parseJoinRequests(rawObject), rawArray);
+  assert.deepStrictEqual(parseJoinRequests(rawEmpty), []);
+});
+
 test('waiting room: role permissions partition active members vs waiting room access', () => {
   const canAccessWaitingRoom = (role) => {
     return role === 'owner' || role === 'co_host';
@@ -80,6 +118,26 @@ test('waiting room: state transitions for re-entry workflow', () => {
   assert.strictEqual(status, 'approved');
 
   assert.deepStrictEqual(transitions, ['submitting', 'pending', 'approved']);
+});
+
+test('waiting room: state transitions for new guest admission workflow', () => {
+  let admissionStatus = 'idle';
+  const transitions = [];
+
+  const updateAdmission = (next) => {
+    admissionStatus = next;
+    transitions.push(admissionStatus);
+  };
+
+  // Join returns 403 Host approval required -> automatically pending
+  updateAdmission('pending');
+  assert.strictEqual(admissionStatus, 'pending');
+
+  // Polling returns approved
+  updateAdmission('approved');
+  assert.strictEqual(admissionStatus, 'approved');
+
+  assert.deepStrictEqual(transitions, ['pending', 'approved']);
 });
 
 test('waiting room: duplicate request handling switches to pending polling without crash', () => {

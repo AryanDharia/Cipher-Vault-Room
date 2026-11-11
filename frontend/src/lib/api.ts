@@ -125,6 +125,7 @@ class ApiClient {
     max_members?: number;
     threshold_required?: number;
     threshold_total?: number;
+    require_admission_approval?: boolean;
   }) {
     return this.request<any>('/rooms', {
       method: 'POST',
@@ -173,8 +174,8 @@ class ApiClient {
     );
   }
 
-  async updateRoomSettings(code: string, settings: { max_members?: number; name?: string }) {
-    return this.request<{ status: string; name: string; max_members: number }>(
+  async updateRoomSettings(code: string, settings: { max_members?: number; name?: string; require_admission_approval?: boolean }) {
+    return this.request<{ status: string; name: string; max_members: number; require_admission_approval?: boolean }>(
       `/rooms/${code}/settings`,
       {
         method: 'PATCH',
@@ -197,20 +198,10 @@ class ApiClient {
   }
 
   async getJoinRequests(code: string) {
-    return this.request<
-      Array<{
-        id: string;
-        room_id: string;
-        user_id: string;
-        username: string;
-        request_type: 'join' | 'reentry';
-        status: 'pending' | 'approved' | 'rejected';
-        created_at: string;
-        reviewed_at?: string | null;
-        reviewed_by?: string | null;
-        membership_status: string;
-      }>
-    >(`/rooms/${code}/join-requests`);
+    const res = await this.request<any>(`/rooms/${code}/join-requests`);
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray(res.requests)) return res.requests;
+    return [];
   }
 
   async approveJoinRequest(code: string, requestId: string) {
@@ -241,6 +232,8 @@ class ApiClient {
       status?: 'pending' | 'approved' | 'rejected';
       request_id?: string;
       request_type?: string;
+      is_kicked?: boolean;
+      require_admission_approval?: boolean;
       created_at?: string;
       reviewed_at?: string | null;
     }>(`/rooms/${code}/join-request/status`);

@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Set
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import Room, RoomMember, User, AuditEvent, utcnow
+from app.database.models import Room, RoomMember, User, AuditEvent, WaitingRoomRequest, utcnow
 from app.config import settings
 
 # Unambiguous alphabet omitting similar chars like 0, O, 1, I
@@ -29,7 +29,8 @@ class RoomService:
         name: str,
         threshold_required: int = 2,
         threshold_total: int = 3,
-        max_members: int = 20
+        max_members: int = 20,
+        require_admission_approval: bool = False
     ) -> Room:
         # Generate unique room code with retries
         code = None
@@ -56,7 +57,8 @@ class RoomService:
             is_active=True,
             max_members=max_members,
             threshold_required=threshold_required,
-            threshold_total=threshold_total
+            threshold_total=threshold_total,
+            require_admission_approval=require_admission_approval
         )
         db.add(room)
         await db.flush()
@@ -126,6 +128,59 @@ class RoomService:
             if user.id == room.creator_id and member.role != "owner":
                 member.role = "owner"
         else:
+            # If room requires host admission approval, non-creators must be approved
+            if getattr(room, "require_admission_approval", False) and user.id != room.creator_id:
+                req_res = await db.execute(
+                    select(WaitingRoomRequest)
+                    .where(
+                        WaitingRoomRequest.room_id == room.id,
+                        WaitingRoomRequest.user_id == user.id
+                    )
+                    .order_by(WaitingRoomRequest.created_at.desc())
+                    .limit(1)
+                )
+                latest_req = req_res.scalars().first()
+                if not latest_req:
+                    # Automatically create pending admission request so host sees it in Waiting Room
+                    new_req = WaitingRoomRequest(
+                        room_id=room.id,
+                        user_id=user.id,
+                        request_type="join",
+                        status="pending",
+                        created_at=now
+                    )
+                    db.add(new_req)
+                    audit = AuditEvent(
+                        room_id=room.id,
+                        user_id=user.id,
+                        username=user.username,
+                        event_type="WAITING_ROOM_REQUEST",
+                        severity="info",
+                        details_json=f'{{"user_id":"{user.id}","username":"{user.username}","request_type":"join"}}'
+                    )
+                    db.add(audit)
+                    await db.commit()
+                    await db.refresh(new_req)
+                    try:
+                        from app.collaboration.manager import manager
+                        await manager.broadcast(room.code, {
+                            "type": "WAITING_ROOM_UPDATED",
+                            "action": "request_created",
+                            "request_id": new_req.id,
+                            "username": user.username,
+                            "request_type": "join",
+                            "created_at": new_req.created_at.isoformat()
+                        })
+                    except Exception:
+                        pass
+                    raise PermissionError("Host approval is required to join this room. An admission request has been submitted to the Waiting Room.")
+                elif latest_req.status == "pending":
+                    raise PermissionError("Host approval is required to join this room. Your admission request is pending host review.")
+                elif latest_req.status == "rejected":
+                    raise PermissionError("Your admission request was declined by the room host.")
+                elif latest_req.status != "approved":
+                    raise PermissionError("Host approval is required to join this room.")
+
             # Check room capacity (exclude kicked members)
             effective_max = room.max_members if (room.max_members and room.max_members > 0) else settings.ROOM_MAX_PARTICIPANTS
             members_result = await db.execute(
