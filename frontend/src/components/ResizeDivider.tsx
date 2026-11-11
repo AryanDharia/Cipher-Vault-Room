@@ -119,8 +119,8 @@ export const ResizeDivider: React.FC<ResizeDividerProps> = ({
           : 'h-2 cursor-row-resize -my-1 w-full'
       } ${
         isDragging
-          ? 'bg-cyan-500/15'
-          : 'hover:bg-cyan-500/10'
+          ? 'bg-[#21D4E5]/15'
+          : 'hover:bg-[#21D4E5]/10'
       } ${className}`}
     >
       {/* 1px visible divider line */}
@@ -129,8 +129,8 @@ export const ResizeDivider: React.FC<ResizeDividerProps> = ({
           isVertical ? 'w-[1px] h-full' : 'h-[1px] w-full'
         } ${
           isDragging
-            ? 'bg-cyan-400 shadow-[0_0_8px_rgba(54,213,223,0.8)]'
-            : 'bg-[#212638] group-hover:bg-cyan-400/80 group-hover:shadow-[0_0_6px_rgba(54,213,223,0.4)]'
+            ? 'bg-[#21D4E5] shadow-[0_0_8px_rgba(33,212,229,0.8)]'
+            : 'bg-[rgba(100,220,205,0.14)] group-hover:bg-[#21D4E5] group-hover:shadow-[0_0_6px_rgba(33,212,229,0.5)]'
         }`}
       />
 
@@ -142,8 +142,8 @@ export const ResizeDivider: React.FC<ResizeDividerProps> = ({
             : 'left-1/2 -translate-x-1/2 h-1 w-6'
         } ${
           isDragging
-            ? 'opacity-100 bg-cyan-400 shadow-[0_0_8px_rgba(54,213,223,0.8)]'
-            : 'opacity-0 group-hover:opacity-100 bg-cyan-400/80'
+            ? 'opacity-100 bg-[#21D4E5] shadow-[0_0_8px_rgba(33,212,229,0.8)]'
+            : 'opacity-0 group-hover:opacity-100 bg-[#21D4E5]/80'
         }`}
       />
     </div>

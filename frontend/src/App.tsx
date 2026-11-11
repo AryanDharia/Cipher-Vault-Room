@@ -924,17 +924,18 @@ export function App() {
   }
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#0a0b10] text-slate-100 overflow-hidden font-sans">
+    <div className="h-screen w-screen flex flex-col cyber-bg-container text-slate-100 overflow-hidden font-sans relative">
+      <div className="cyber-bg-overlay" />
       {/* Banner Notification (e.g. room/account deletion alerts) */}
       {bannerNotification && (
-        <div className="bg-cyan-950/90 border-b border-cyan-800/60 px-4 py-2 flex items-center justify-between text-xs font-mono text-cyan-200 z-40 animate-fadeIn">
+        <div className="relative z-50 bg-[#0B1115]/95 border-b border-[#21D4E5]/30 px-4 py-2.5 flex items-center justify-between text-xs font-mono text-[#21D4E5] backdrop-blur-md shadow-[0_4px_20px_rgba(0,0,0,0.6)] animate-fadeIn">
           <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-cyan-400" />
+            <span className="w-2 h-2 rounded-full bg-[#21D4E5] shadow-[0_0_8px_#21D4E5]" />
             <span>{bannerNotification}</span>
           </div>
           <button
             onClick={() => setBannerNotification(null)}
-            className="text-cyan-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-cyan-900/50"
+            className="text-[#21D4E5] hover:text-white px-1.5 py-0.5 rounded hover:bg-[#21D4E5]/10 transition-colors"
           >
             ✕
           </button>
@@ -942,7 +943,8 @@ export function App() {
       )}
 
       {/* Top Navigation */}
-      <Navbar
+      <div className="relative z-10 shrink-0">
+        <Navbar
         roomCode={roomCode}
         roomName={roomName}
         isLocked={isLocked}
@@ -975,10 +977,11 @@ export function App() {
         isRightCollapsed={isRightCollapsed}
         onToggleRightSidebar={handleToggleRightSidebar}
       />
+      </div>
 
       {/* Main Workspace Layout */}
       {roomCode ? (
-        <div className="flex-1 flex flex-col overflow-hidden relative">
+        <div className="relative z-10 flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 flex overflow-hidden relative">
             {/* Left Sidebar (Desktop Inline / Mobile Drawer Overlay) */}
             {!isLeftCollapsed && (
@@ -1163,13 +1166,15 @@ export function App() {
         </div>
       ) : (
         /* Room Join / Lobby Screen */
-        <RoomModal
-          isOpen={true}
-          user={user}
-          onRoomJoined={handleRoomJoined}
-          onLogout={() => setShowSignOutModal(true)}
-          onOpenDeleteAccount={() => setShowDeleteAccountModal(true)}
-        />
+        <div className="relative z-10 flex-1 flex overflow-hidden">
+          <RoomModal
+            isOpen={true}
+            user={user}
+            onRoomJoined={handleRoomJoined}
+            onLogout={() => setShowSignOutModal(true)}
+            onOpenDeleteAccount={() => setShowDeleteAccountModal(true)}
+          />
+        </div>
       )}
 
       {/* Heist Mode 30-Second Security Simulation Modal */}

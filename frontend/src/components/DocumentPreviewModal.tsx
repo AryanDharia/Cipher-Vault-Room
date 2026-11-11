@@ -162,34 +162,37 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-[#08090e]/90 backdrop-blur-md flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
-      <div className="bg-[#0f111a] border border-[#212638] rounded-xl max-w-4xl w-full flex flex-col h-[85vh] shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 select-none animate-fadeIn">
+      <div className="bg-[#0B1115]/95 border border-[rgba(100,220,205,0.18)] rounded-2xl max-w-4xl w-full flex flex-col h-[85vh] shadow-[0_12px_50px_rgba(0,0,0,0.85)] overflow-hidden backdrop-blur-xl relative">
+        {/* Top subtle glow line */}
+        <div className="bg-gradient-to-r from-[#10BFA5]/40 via-[#21D4E5]/30 to-transparent h-[1px] absolute top-0 left-0 right-0" />
+
         {/* Header Bar */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#212638] bg-[#0c0e15] shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(100,220,205,0.12)] bg-[#070D10] shrink-0">
           <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-cyan-950/60 border border-cyan-800/60 flex items-center justify-center shrink-0 text-cyan-400">
+            <div className="w-9 h-9 rounded-xl bg-[#0F1D24] border border-[#21D4E5]/30 flex items-center justify-center shrink-0 text-[#21D4E5] shadow-[0_0_12px_rgba(33,212,229,0.2)]">
               {isPdf ? (
                 <BookOpen className="w-4 h-4 text-amber-400" />
               ) : isDocx ? (
-                <FileText className="w-4 h-4 text-blue-400" />
+                <FileText className="w-4 h-4 text-[#21D4E5]" />
               ) : isCodeOrData ? (
-                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                <FileSpreadsheet className="w-4 h-4 text-[#10BFA5]" />
               ) : (
-                <FileCode className="w-4 h-4 text-cyan-400" />
+                <FileCode className="w-4 h-4 text-[#21D4E5]" />
               )}
             </div>
             <div className="min-w-0">
               <h2 className="text-xs font-mono font-bold text-slate-100 truncate flex items-center space-x-2">
                 <span className="truncate">{filename}</span>
                 {isEncrypted && (
-                  <span className="shrink-0 flex items-center space-x-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800/50">
+                  <span className="shrink-0 flex items-center space-x-1 px-2 py-0.5 rounded-full text-[9px] font-mono bg-[#10BFA5]/15 text-[#10BFA5] border border-[#10BFA5]/40">
                     <Lock className="w-2.5 h-2.5" />
                     <span>E2EE</span>
                   </span>
                 )}
               </h2>
-              <div className="flex items-center space-x-2 text-[10px] font-mono text-slate-500 mt-0.5">
-                <span className="uppercase text-cyan-400 font-semibold">{type || ext.slice(1)}</span>
+              <div className="flex items-center space-x-2 text-[10px] font-mono text-slate-400 mt-0.5">
+                <span className="uppercase text-[#21D4E5] font-semibold">{type || ext.slice(1)}</span>
                 <span>•</span>
                 <span>{formatFileSize(source.file_size)}</span>
                 <span>•</span>
@@ -199,12 +202,12 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center space-x-2 shrink-0">
+          <div className="flex items-center space-x-2.5 shrink-0">
             {isPdf && blobUrl && (
               <button
                 type="button"
                 onClick={handleOpenInNewTab}
-                className="px-2.5 py-1.5 rounded-lg border border-[#212638] bg-[#141724] hover:bg-[#1a1f33] text-xs font-mono text-slate-300 hover:text-white flex items-center space-x-1.5 transition-colors"
+                className="px-3 py-1.5 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] hover:bg-[#152329] text-xs font-mono text-slate-300 hover:text-white flex items-center space-x-1.5 transition-colors"
                 title="Open PDF in new browser window"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -215,7 +218,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             <button
               type="button"
               onClick={handleDownload}
-              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-mono font-semibold text-xs flex items-center space-x-1.5 transition-colors shadow-lg shadow-cyan-950/40"
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#10BFA5] to-[#21D4E5] hover:opacity-90 text-slate-950 font-mono font-semibold text-xs flex items-center space-x-1.5 transition-all shadow-[0_0_15px_rgba(33,212,229,0.3)]"
               title="Download original document file"
             >
               <Download className="w-3.5 h-3.5" />
@@ -225,7 +228,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-[#1a1f33] transition-colors"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -233,24 +236,24 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         </div>
 
         {/* Content Viewer Body */}
-        <div className="flex-1 bg-[#090a10] overflow-hidden flex flex-col p-4">
+        <div className="flex-1 bg-[#05090B] overflow-hidden flex flex-col p-4">
           {loading && (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400 space-y-2">
-              <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+              <Loader2 className="w-6 h-6 animate-spin text-[#21D4E5]" />
               <span className="text-xs font-mono">Loading document preview safely...</span>
             </div>
           )}
 
           {error && !loading && (
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-red-950/40 border border-red-800/60 flex items-center justify-center text-red-400">
+              <div className="w-12 h-12 rounded-full bg-red-950/40 border border-red-500/40 flex items-center justify-center text-red-400">
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <p className="text-xs font-mono text-red-300 max-w-md">{error}</p>
               <button
                 type="button"
                 onClick={handleDownload}
-                className="px-3 py-1.5 rounded bg-[#161a29] border border-[#212638] text-xs font-mono text-cyan-400 hover:text-white"
+                className="px-3.5 py-1.5 rounded-xl bg-[#0F171B] border border-[rgba(100,220,205,0.18)] text-xs font-mono text-[#21D4E5] hover:text-white"
               >
                 Download original file instead
               </button>
@@ -265,14 +268,14 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                   <iframe
                     src={blobUrl}
                     title="PDF Viewer"
-                    className="w-full flex-1 rounded-lg border border-[#212638] bg-[#0c0e15]"
+                    className="w-full flex-1 rounded-xl border border-[rgba(100,220,205,0.14)] bg-[#070D10]"
                   />
-                  <div className="mt-2 flex items-center justify-between text-[11px] font-mono text-slate-500 px-1">
-                    <span>Rendered using sandboxed browser viewer. Zero third-party service transmission.</span>
+                  <div className="mt-2.5 flex items-center justify-between text-[11px] font-mono text-slate-400 px-1">
+                    <span>Rendered via sandboxed client viewer. Zero cloud telemetry.</span>
                     <button
                       type="button"
                       onClick={handleDownload}
-                      className="text-cyan-400 hover:underline"
+                      className="text-[#21D4E5] hover:underline"
                     >
                       Having trouble viewing? Download PDF
                     </button>
@@ -283,29 +286,29 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               {/* Word Document (.docx) Client-Side Viewer */}
               {isDocx && (
                 <div className="w-full h-full flex flex-col overflow-hidden">
-                  <div className="mb-2 px-3 py-2 rounded-lg bg-[#121522] border border-[#212638] flex items-center justify-between text-[11px] font-mono text-slate-400">
-                    <span className="flex items-center space-x-1.5 text-blue-300">
+                  <div className="mb-2.5 px-3.5 py-2.5 rounded-xl bg-[#070D10] border border-[rgba(100,220,205,0.14)] flex items-center justify-between text-[11px] font-mono text-slate-400">
+                    <span className="flex items-center space-x-2 text-[#21D4E5]">
                       <FileText className="w-3.5 h-3.5" />
-                      <span>Microsoft Word Document (.docx) — Safe Parsed Preview</span>
+                      <span>Microsoft Word (.docx) — Safe Parsed Preview</span>
                     </span>
                     <button
                       type="button"
                       onClick={handleDownload}
-                      className="text-cyan-400 hover:text-white flex items-center space-x-1 transition-colors"
+                      className="text-[#10BFA5] hover:text-white flex items-center space-x-1.5 transition-colors"
                     >
                       <Download className="w-3 h-3" />
-                      <span>Open in Microsoft Word</span>
+                      <span>Open in Word</span>
                     </button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto rounded-lg border border-[#212638] bg-[#0c0e17] p-6 font-sans text-slate-200 space-y-4 leading-relaxed">
+                  <div className="flex-1 overflow-y-auto rounded-xl border border-[rgba(100,220,205,0.12)] bg-[#070D10] p-6 font-sans text-slate-200 space-y-4 leading-relaxed">
                     {docxParagraphs.length === 0 ? (
                       <p className="text-slate-500 text-xs font-mono">No readable paragraph content found in document.</p>
                     ) : (
                       docxParagraphs.map((para, idx) => (
                         <p
                           key={idx}
-                          className="text-xs sm:text-sm text-slate-200 border-l-2 border-transparent hover:border-cyan-500/50 pl-2 transition-colors whitespace-pre-wrap"
+                          className="text-xs sm:text-sm text-slate-200 border-l-2 border-transparent hover:border-[#21D4E5]/50 pl-3 transition-colors whitespace-pre-wrap leading-relaxed"
                         >
                           {para}
                         </p>
@@ -318,7 +321,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               {/* Text / Markdown / Code / JSON / CSV Viewer */}
               {!isPdf && !isDocx && (
                 <div className="w-full h-full flex flex-col overflow-hidden">
-                  <div className="flex-1 overflow-y-auto rounded-lg border border-[#212638] bg-[#0c0e17] p-4 font-mono text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
+                  <div className="flex-1 overflow-y-auto rounded-xl border border-[rgba(100,220,205,0.12)] bg-[#070D10] p-5 font-mono text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">
                     {textContent || 'Document is empty.'}
                   </div>
                 </div>

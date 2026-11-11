@@ -1,5 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Shield, Lock, Unlock, Copy, Check, LogOut, Trash2, User, ChevronDown, PanelLeft, PanelRight } from 'lucide-react';
+import {
+  Shield,
+  Lock,
+  Unlock,
+  Copy,
+  Check,
+  LogOut,
+  Trash2,
+  User,
+  ChevronDown,
+  PanelLeft,
+  PanelRight,
+  Radio,
+  Cpu
+} from 'lucide-react';
 import { ConnectionState } from '../lib/websocket';
 
 interface NavbarProps {
@@ -68,17 +82,17 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isHost = currentUserRole === 'owner';
 
   return (
-    <header className="h-14 border-b border-[#212638] bg-[#0c0e17] px-4 flex items-center justify-between select-none relative z-30">
+    <header className="h-14 border-b border-[rgba(100,220,205,0.14)] bg-[#05090b]/90 backdrop-blur-md px-4 flex items-center justify-between select-none relative z-30 shadow-[0_4px_20px_rgba(0,0,0,0.4)]">
       {/* Left: Brand & Room Info */}
-      <div className="flex items-center space-x-4">
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 rounded border border-cyan-500/30 bg-cyan-950/40 flex items-center justify-center text-cyan-400 font-bold text-sm tracking-wider shadow-[0_0_12px_rgba(6,182,212,0.15)]">
+      <div className="flex items-center space-x-3.5">
+        <div className="flex items-center space-x-2.5">
+          <div className="w-8 h-8 rounded-lg border border-[#21d4e5]/40 bg-gradient-to-br from-[#21d4e5]/20 to-[#10bfa5]/10 flex items-center justify-center text-[#21d4e5] font-bold text-xs tracking-wider shadow-[0_0_14px_rgba(33,212,229,0.2)]">
             VR
           </div>
-          <div>
+          <div className="flex flex-col">
             <div className="flex items-center space-x-2">
-              <span className="font-mono text-sm font-semibold tracking-wider text-slate-100">VAULTROOM</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#1e2436] text-cyan-400 border border-cyan-800/40">
+              <span className="font-mono text-xs font-bold tracking-widest text-[#f2f7f7]">VAULTROOM</span>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#10bfa5]/15 text-[#10bfa5] border border-[#10bfa5]/30">
                 E2EE v1.0
               </span>
             </div>
@@ -91,10 +105,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={onToggleLeftSidebar}
             title={isLeftCollapsed ? 'Expand Files & Sources Sidebar (Ctrl+B)' : 'Collapse Files Sidebar (Ctrl+B)'}
-            className={`p-1.5 rounded border transition-colors ${
+            className={`p-1.5 rounded-lg border transition-all ${
               !isLeftCollapsed
-                ? 'bg-[#161a29] border-cyan-800/60 text-cyan-400'
-                : 'bg-[#121520] border-[#212638] text-slate-400 hover:text-slate-200 hover:border-cyan-700/50'
+                ? 'bg-[#10bfa5]/15 border-[#10bfa5]/40 text-[#21d4e5] shadow-[0_0_10px_rgba(33,212,229,0.15)]'
+                : 'bg-[#0b1115] border-[rgba(100,220,205,0.14)] text-[#91a4a7] hover:text-[#f2f7f7] hover:border-[#21d4e5]/40'
             }`}
           >
             <PanelLeft className="w-4 h-4" />
@@ -102,23 +116,25 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
 
         {roomCode && (
-          <div className="hidden sm:flex items-center space-x-3 pl-4 border-l border-[#212638]">
-            <span className="text-xs text-slate-400 font-medium">{roomName || 'Active Room'}:</span>
+          <div className="hidden sm:flex items-center space-x-3 pl-3.5 border-l border-[rgba(100,220,205,0.14)]">
+            <span className="text-xs text-[#91a4a7] font-medium max-w-[140px] truncate" title={roomName || 'Active Room'}>
+              {roomName || 'Active Room'}:
+            </span>
             <button
               onClick={copyCode}
               title="Click to copy 6-character room code"
-              className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#141724] border border-[#262c42] hover:border-cyan-500/50 hover:bg-[#1a1f33] transition-all group"
+              className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[rgba(12,22,25,0.8)] border border-[rgba(100,220,205,0.2)] hover:border-[#21d4e5]/60 hover:bg-[#0b1115] transition-all group shadow-sm"
             >
-              <span className="font-mono text-xs font-bold text-cyan-400 tracking-widest">{roomCode}</span>
+              <span className="font-mono text-xs font-bold text-[#21d4e5] tracking-widest">{roomCode}</span>
               {copied ? (
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <Check className="w-3.5 h-3.5 text-[#10bfa5]" />
               ) : (
-                <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-400" />
+                <Copy className="w-3.5 h-3.5 text-[#91a4a7] group-hover:text-[#21d4e5]" />
               )}
             </button>
 
             {isHost && (
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/50 text-cyan-400 border border-cyan-700/50">
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#21d4e5]/15 text-[#21d4e5] border border-[#21d4e5]/35 font-bold tracking-wide">
                 HOST
               </span>
             )}
@@ -128,26 +144,26 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Center: Security Lockdown Banner if active */}
       {isLocked && (
-        <div className="hidden md:flex items-center space-x-2 px-3 py-1 bg-red-950/60 border border-red-800/60 rounded text-red-300 text-xs animate-pulse">
+        <div className="hidden md:flex items-center space-x-2 px-3 py-1 bg-red-950/70 border border-red-500/50 rounded-lg text-red-200 text-xs animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.25)]">
           <Lock className="w-3.5 h-3.5 text-red-400" />
-          <span className="font-mono font-medium">SECURITY LOCKDOWN ACTIVE: {lockReason || 'Write suspended'}</span>
+          <span className="font-mono font-semibold">SECURITY LOCKDOWN ACTIVE: {lockReason || 'Write suspended'}</span>
         </div>
       )}
 
       {/* Right: Real Connection State, Security Actions & User */}
-      <div className="flex items-center space-x-3">
+      <div className="flex items-center space-x-2.5">
         {/* Connection State Indicator */}
-        <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#121520] border border-[#212638]">
+        <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#0b1115] border border-[rgba(100,220,205,0.16)]">
           <span
             className={`w-2 h-2 rounded-full ${
               connectionState === 'connected'
-                ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
+                ? 'bg-[#10bfa5] shadow-[0_0_8px_rgba(16,191,165,0.8)]'
                 : connectionState === 'connecting' || connectionState === 'reconnecting'
                 ? 'bg-amber-400 animate-ping'
                 : 'bg-red-400'
             }`}
           />
-          <span className="font-mono text-[11px] capitalize text-slate-300">
+          <span className="font-mono text-[11px] capitalize text-[#91a4a7]">
             {connectionState}
           </span>
         </div>
@@ -157,7 +173,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onDeleteRoom}
             title="Permanently Delete Room (Host Only)"
-            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-red-950/40 hover:bg-red-900/60 border border-red-800/60 hover:border-red-600 text-red-300 text-xs font-mono transition-colors"
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-red-950/40 hover:bg-red-900/60 border border-red-800/60 hover:border-red-500 text-red-300 text-xs font-mono transition-all shadow-sm"
           >
             <Trash2 className="w-3.5 h-3.5 text-red-400" />
             <span className="hidden sm:inline">Delete Room</span>
@@ -169,7 +185,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onLeaveRoom}
             title="Leave current room"
-            className="px-2 py-1 rounded bg-[#141724] border border-[#262c42] hover:bg-[#1a1f33] text-slate-300 hover:text-white text-xs font-mono transition-colors hidden sm:inline"
+            className="px-2.5 py-1 rounded-lg bg-[#0b1115] border border-[rgba(100,220,205,0.16)] hover:bg-[#121c21] hover:border-[#21d4e5]/40 text-[#91a4a7] hover:text-[#f2f7f7] text-xs font-mono transition-all hidden sm:inline"
           >
             Leave
           </button>
@@ -179,7 +195,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {roomCode && (
           <button
             onClick={onOpenHeist}
-            className="flex items-center space-x-1 px-2.5 py-1 rounded bg-red-950/40 hover:bg-red-900/50 border border-red-800/50 hover:border-red-600 text-red-300 text-xs font-mono transition-colors"
+            className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-red-950/40 hover:bg-red-900/50 border border-red-800/50 hover:border-red-500 text-red-300 text-xs font-mono transition-all shadow-[0_0_10px_rgba(239,68,68,0.15)]"
           >
             <Shield className="w-3.5 h-3.5 text-red-400" />
             <span className="hidden md:inline">Heist Mode</span>
@@ -191,10 +207,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             onClick={onToggleLock}
             title={isLocked ? 'Unlock Room' : 'Engage Emergency Lockdown'}
-            className={`p-1.5 rounded border transition-colors ${
+            className={`p-1.5 rounded-lg border transition-all ${
               isLocked
-                ? 'bg-red-900/30 border-red-700 text-red-400 hover:bg-red-900/50'
-                : 'bg-[#141724] border-[#262c42] text-slate-400 hover:text-amber-400 hover:border-amber-500/50'
+                ? 'bg-red-900/40 border-red-600 text-red-300 hover:bg-red-900/60 shadow-[0_0_12px_rgba(239,68,68,0.3)]'
+                : 'bg-[#0b1115] border-[rgba(100,220,205,0.14)] text-[#91a4a7] hover:text-amber-400 hover:border-amber-500/50'
             }`}
           >
             {isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
@@ -207,10 +223,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={onToggleRightSidebar}
             title={isRightCollapsed ? 'Expand Quorum & AI Guard Sidebar' : 'Collapse Quorum Sidebar'}
-            className={`p-1.5 rounded border transition-colors ${
+            className={`p-1.5 rounded-lg border transition-all ${
               !isRightCollapsed
-                ? 'bg-[#161a29] border-cyan-800/60 text-cyan-400'
-                : 'bg-[#121520] border-[#212638] text-slate-400 hover:text-slate-200 hover:border-cyan-700/50'
+                ? 'bg-[#10bfa5]/15 border-[#10bfa5]/40 text-[#21d4e5] shadow-[0_0_10px_rgba(33,212,229,0.15)]'
+                : 'bg-[#0b1115] border-[rgba(100,220,205,0.14)] text-[#91a4a7] hover:text-[#f2f7f7] hover:border-[#21d4e5]/40'
             }`}
           >
             <PanelRight className="w-4 h-4" />
@@ -219,28 +235,28 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* User Pill & Account Dropdown */}
         {user && (
-          <div className="relative pl-2 border-l border-[#212638]" ref={userMenuRef}>
+          <div className="relative pl-2 border-l border-[rgba(100,220,205,0.14)]" ref={userMenuRef}>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
-              className="flex items-center space-x-2 p-1 rounded hover:bg-[#141724] border border-transparent hover:border-[#262c42] transition-colors"
+              className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-[#0b1115] border border-transparent hover:border-[rgba(100,220,205,0.2)] transition-all"
             >
-              <div className="w-6 h-6 rounded bg-cyan-950/60 border border-cyan-800/40 flex items-center justify-center text-cyan-400">
+              <div className="w-6 h-6 rounded-md bg-[#21d4e5]/15 border border-[#21d4e5]/30 flex items-center justify-center text-[#21d4e5]">
                 <User className="w-3.5 h-3.5" />
               </div>
               <div className="flex flex-col items-start hidden sm:flex text-left">
-                <span className="text-xs font-medium text-slate-200 leading-tight">{user.username}</span>
-                <span className="text-[10px] font-mono text-cyan-400 uppercase leading-none">{user.role}</span>
+                <span className="text-xs font-semibold text-[#f2f7f7] leading-tight">{user.username}</span>
+                <span className="text-[9px] font-mono text-[#10bfa5] uppercase leading-none">{user.role}</span>
               </div>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
+              <ChevronDown className="w-3 h-3 text-[#91a4a7]" />
             </button>
 
             {/* Account Settings / Actions Dropdown Menu */}
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-56 rounded-xl bg-[#0f111a] border border-[#212638] shadow-2xl py-1.5 z-50 animate-fadeIn">
-                <div className="px-3 py-2 border-b border-[#212638]">
-                  <p className="text-xs font-semibold text-slate-100">{user.username}</p>
-                  <p className="text-[10px] font-mono text-cyan-400 uppercase tracking-wide">Role: {user.role}</p>
-                  <p className="text-[10px] font-mono text-slate-500 truncate mt-0.5">ID: {user.id.slice(0, 8)}...</p>
+              <div className="absolute right-0 mt-2 w-56 rounded-xl bg-[#0b1115]/95 border border-[rgba(100,220,205,0.2)] shadow-2xl py-1.5 z-50 backdrop-blur-xl animate-fadeIn">
+                <div className="px-3.5 py-2.5 border-b border-[rgba(100,220,205,0.12)]">
+                  <p className="text-xs font-bold text-[#f2f7f7]">{user.username}</p>
+                  <p className="text-[10px] font-mono text-[#21d4e5] uppercase tracking-wide">Role: {user.role}</p>
+                  <p className="text-[10px] font-mono text-[#91a4a7] truncate mt-0.5">ID: {user.id.slice(0, 8)}...</p>
                 </div>
 
                 <div className="py-1">
@@ -249,7 +265,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       setShowUserMenu(false);
                       onLogout();
                     }}
-                    className="w-full text-left px-3 py-2 text-xs font-mono text-slate-300 hover:bg-[#1a1f33] hover:text-white flex items-center space-x-2 transition-colors"
+                    className="w-full text-left px-3.5 py-2 text-xs font-mono text-[#f2f7f7] hover:bg-[#121c21] hover:text-[#21d4e5] flex items-center space-x-2 transition-colors"
                   >
                     <LogOut className="w-3.5 h-3.5 text-amber-400" />
                     <span>Sign Out</span>
@@ -261,7 +277,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                         setShowUserMenu(false);
                         onOpenDeleteAccount();
                       }}
-                      className="w-full text-left px-3 py-2 text-xs font-mono text-red-400 hover:bg-red-950/50 hover:text-red-300 flex items-center space-x-2 transition-colors border-t border-[#212638]/50 mt-1"
+                      className="w-full text-left px-3.5 py-2 text-xs font-mono text-red-400 hover:bg-red-950/40 hover:text-red-300 flex items-center space-x-2 transition-colors border-t border-[rgba(100,220,205,0.1)] mt-1"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-red-400" />
                       <span>Delete Account</span>

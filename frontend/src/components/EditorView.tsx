@@ -833,37 +833,41 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   if (!doc) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center h-full min-w-0 bg-[#0a0b10] text-slate-500 p-8 select-none">
-        <FileCode className="w-12 h-12 text-[#1c2235] mb-3" />
-        <p className="text-sm font-mono">No document selected</p>
-        <p className="text-xs text-slate-600 mt-1">Select an existing document from the left panel or create a new file.</p>
+      <div className="flex-1 flex flex-col items-center justify-center h-full min-w-0 bg-[#05090b]/80 backdrop-blur-sm text-[#91a4a7] p-8 select-none">
+        <div className="w-16 h-16 rounded-2xl bg-[rgba(12,22,25,0.85)] border border-[rgba(100,220,205,0.22)] flex items-center justify-center text-[#21d4e5] mb-4 shadow-[0_0_24px_rgba(33,212,229,0.14)]">
+          <FileCode className="w-8 h-8" />
+        </div>
+        <p className="text-sm font-mono font-bold text-[#f2f7f7]">No Document Selected</p>
+        <p className="text-xs text-[#91a4a7] mt-1.5 max-w-sm text-center leading-relaxed">
+          Select an encrypted file from the left workspace sidebar or create a new file to begin collaborative editing.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full min-w-0 bg-[#0a0b10] overflow-hidden">
+    <div className="flex-1 flex flex-col h-full min-w-0 bg-[#05090b]/85 backdrop-blur-md overflow-hidden">
       {/* Document Control Header */}
-      <div className="h-11 px-3 sm:px-4 border-b border-[#212638] bg-[#0c0e16] flex items-center justify-between select-none gap-2 overflow-hidden">
+      <div className="h-11 px-3 sm:px-4 border-b border-[rgba(100,220,205,0.14)] bg-[#070d10]/95 backdrop-blur-md flex items-center justify-between select-none gap-2 overflow-hidden shadow-sm">
         <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1 overflow-hidden">
-          <span className="font-mono text-xs font-semibold text-slate-200 truncate shrink-0 max-w-[110px] sm:max-w-[200px]">{doc.title}</span>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#161a29] text-cyan-400 border border-[#212638] shrink-0 hidden sm:inline">
+          <span className="font-mono text-xs font-bold text-[#f2f7f7] truncate shrink-0 max-w-[120px] sm:max-w-[220px]">{doc.title}</span>
+          <span className="text-[9px] font-mono px-2 py-0.5 rounded-md bg-[#10bfa5]/12 text-[#10bfa5] border border-[#10bfa5]/25 shrink-0 hidden sm:inline font-semibold">
             {doc.doc_type === 'code' ? `${doc.language || 'Code'}` : 'Markdown Rich-Text'}
           </span>
           {doc.is_protected && (
-            <span className="flex items-center space-x-1 text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800/40 text-amber-300 shrink-0">
+            <span className="flex items-center space-x-1 text-[9px] font-mono px-2 py-0.5 rounded-md bg-amber-950/60 border border-amber-800/40 text-amber-300 shrink-0">
               <Lock className="w-3 h-3" />
-              <span className="hidden md:inline">Threshold Protected</span>
+              <span className="hidden md:inline">Consensus Locked</span>
             </span>
           )}
           {formatTypingIndicator(typingUsers) && (
             <div
-              className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-400/60 text-cyan-300 text-[11px] font-mono shrink-0 transition-all duration-200 shadow-[0_0_12px_rgba(6,182,212,0.3)]"
+              className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-[#21d4e5]/12 border border-[#21d4e5]/45 text-[#21d4e5] text-[10px] font-mono shrink-0 transition-all duration-200 shadow-[0_0_12px_rgba(33,212,229,0.2)]"
               title={typingUsers.join(', ')}
             >
               <span className="flex h-1.5 w-1.5 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#21d4e5] opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#21d4e5]" />
               </span>
               <span className="truncate max-w-[140px] sm:max-w-[260px]">
                 {formatTypingIndicator(typingUsers)}
@@ -873,13 +877,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
         </div>
 
         <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
-          <div className="flex items-center space-x-1 px-2 py-1 rounded bg-[#121522] border border-[#212638] text-[11px] font-mono shrink-0" title={syncError || undefined} aria-live="polite">
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#0b1115] border border-[rgba(100,220,205,0.16)] text-[11px] font-mono shrink-0" title={syncError || undefined} aria-live="polite">
             <span className={`w-2 h-2 rounded-full ${
-              syncStatus === 'synced' ? 'bg-emerald-400' :
+              syncStatus === 'synced' ? 'bg-[#10bfa5] shadow-[0_0_6px_rgba(16,191,165,0.7)]' :
               syncStatus === 'syncing' || syncStatus === 'reconnecting' ? 'bg-amber-400 animate-pulse' :
               syncStatus === 'failed' ? 'bg-red-400' : 'bg-amber-500'
             }`} />
-            <span className={syncStatus === 'failed' ? 'text-red-300' : 'text-slate-300'}>
+            <span className={syncStatus === 'failed' ? 'text-red-300' : 'text-[#f2f7f7]'}>
               {syncStatus === 'synced' ? 'Synced' :
                 syncStatus === 'syncing' ? 'Syncing…' :
                   syncStatus === 'reconnecting' ? 'Reconnecting…' :
@@ -887,7 +891,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                       syncStatus === 'failed' ? 'Failed' : 'Unsaved'}
             </span>
             {lastSyncedAt && syncStatus === 'synced' && (
-              <span className="hidden xl:inline text-slate-500">{new Date(lastSyncedAt).toLocaleTimeString()}</span>
+              <span className="hidden xl:inline text-[#91a4a7]">{new Date(lastSyncedAt).toLocaleTimeString()}</span>
             )}
           </div>
           {syncStatus === 'failed' && syncError && (
@@ -901,9 +905,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
             disabled={!collabDoc || syncStatus === 'syncing'}
             title={syncError || 'Save local edits and merge the latest persisted room state'}
             aria-label="Sync Now"
-            className="px-2 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] disabled:opacity-50 text-xs font-mono text-slate-200 transition-colors flex items-center space-x-1"
+            className="px-2.5 py-1 rounded-lg bg-[#0b1115] hover:bg-[#121c21] border border-[rgba(100,220,205,0.18)] disabled:opacity-50 text-xs font-mono text-[#f2f7f7] hover:text-[#21d4e5] transition-all flex items-center space-x-1"
           >
-            <RefreshCw className={`w-3 h-3 text-cyan-400 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3 h-3 text-[#21d4e5] ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
             <span className="hidden md:inline">Sync</span>
           </button>
 
@@ -911,10 +915,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
           <button
             onClick={() => setAutoMask(!autoMask)}
             title="Toggle sensitive number masking"
-            className={`hidden lg:flex px-2 py-1 rounded text-xs font-mono border items-center space-x-1 transition-colors ${
+            className={`hidden lg:flex px-2.5 py-1 rounded-lg text-xs font-mono border items-center space-x-1 transition-all ${
               autoMask
-                ? 'bg-cyan-950/70 border-cyan-500 text-cyan-300'
-                : 'bg-[#121522] border-[#212638] text-slate-400 hover:text-slate-200'
+                ? 'bg-[#21d4e5]/15 border-[#21d4e5]/50 text-[#21d4e5] shadow-[0_0_10px_rgba(33,212,229,0.15)]'
+                : 'bg-[#0b1115] border-[rgba(100,220,205,0.16)] text-[#91a4a7] hover:text-[#f2f7f7]'
             }`}
           >
             {autoMask ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
@@ -925,7 +929,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           <button
             onClick={handleSave}
             disabled={saveStatus === 'saving' || isLocked}
-            className="px-2.5 py-1 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-slate-950 font-semibold text-xs font-mono transition-colors flex items-center space-x-1"
+            className="px-3 py-1 rounded-lg bg-gradient-to-r from-[#21d4e5] to-[#10bfa5] hover:opacity-90 disabled:opacity-50 text-[#05090b] font-bold text-xs font-mono transition-all flex items-center space-x-1 shadow-md"
           >
             <Save className="w-3 h-3" />
             <span>Save</span>
@@ -943,9 +947,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 : 'Export decrypted document with forensic watermark'
             }
             aria-label="Export document"
-            className="flex px-2 py-1 rounded bg-[#1c2236] hover:bg-[#252d47] border border-[#2a3350] disabled:opacity-50 text-xs font-mono text-slate-200 transition-colors items-center space-x-1"
+            className="flex px-2.5 py-1 rounded-lg bg-[#0b1115] hover:bg-[#121c21] border border-[rgba(100,220,205,0.18)] disabled:opacity-50 text-xs font-mono text-[#f2f7f7] hover:text-[#21d4e5] transition-all items-center space-x-1"
           >
-            <Download className={`w-3 h-3 text-cyan-400 ${exporting ? 'animate-pulse' : ''}`} />
+            <Download className={`w-3 h-3 text-[#21d4e5] ${exporting ? 'animate-pulse' : ''}`} />
             <span className="hidden md:inline">{exporting ? 'Exporting…' : 'Export'}</span>
           </button>
         </div>
@@ -989,12 +993,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
       {/* TipTap Formatting Toolbar (Only in Document Mode) */}
       {doc.doc_type === 'document' && editor && (
-        <div className="h-9 px-4 border-b border-[#1b1f30] bg-[#090a10] flex items-center justify-between select-none">
+        <div className="h-9 px-4 border-b border-[rgba(100,220,205,0.1)] bg-[#070d10]/95 flex items-center justify-between select-none">
           <div className="flex items-center space-x-1">
           <button
             onClick={() => editor.chain().focus().toggleBold().run()}
-            className={`p-1.5 rounded hover:bg-[#181d2e] ${
-              editor.isActive('bold') ? 'text-cyan-400 bg-[#161a29]' : 'text-slate-400'
+            className={`p-1.5 rounded-md hover:bg-[#121c21] transition-all ${
+              editor.isActive('bold') ? 'text-[#21d4e5] bg-[#21d4e5]/15 border border-[#21d4e5]/30' : 'text-[#91a4a7]'
             }`}
             title="Bold"
           >
@@ -1002,8 +1006,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </button>
           <button
             onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={`p-1.5 rounded hover:bg-[#181d2e] ${
-              editor.isActive('italic') ? 'text-cyan-400 bg-[#161a29]' : 'text-slate-400'
+            className={`p-1.5 rounded-md hover:bg-[#121c21] transition-all ${
+              editor.isActive('italic') ? 'text-[#21d4e5] bg-[#21d4e5]/15 border border-[#21d4e5]/30' : 'text-[#91a4a7]'
             }`}
             title="Italic"
           >
@@ -1011,8 +1015,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </button>
           <button
             onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-            className={`p-1.5 rounded hover:bg-[#181d2e] ${
-              editor.isActive('heading', { level: 1 }) ? 'text-cyan-400 bg-[#161a29]' : 'text-slate-400'
+            className={`p-1.5 rounded-md hover:bg-[#121c21] transition-all ${
+              editor.isActive('heading', { level: 1 }) ? 'text-[#21d4e5] bg-[#21d4e5]/15 border border-[#21d4e5]/30' : 'text-[#91a4a7]'
             }`}
             title="Heading 1"
           >
@@ -1020,8 +1024,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </button>
           <button
             onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            className={`p-1.5 rounded hover:bg-[#181d2e] ${
-              editor.isActive('heading', { level: 2 }) ? 'text-cyan-400 bg-[#161a29]' : 'text-slate-400'
+            className={`p-1.5 rounded-md hover:bg-[#121c21] transition-all ${
+              editor.isActive('heading', { level: 2 }) ? 'text-[#21d4e5] bg-[#21d4e5]/15 border border-[#21d4e5]/30' : 'text-[#91a4a7]'
             }`}
             title="Heading 2"
           >
@@ -1029,8 +1033,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </button>
           <button
             onClick={() => editor.chain().focus().toggleBulletList().run()}
-            className={`p-1.5 rounded hover:bg-[#181d2e] ${
-              editor.isActive('bulletList') ? 'text-cyan-400 bg-[#161a29]' : 'text-slate-400'
+            className={`p-1.5 rounded-md hover:bg-[#121c21] transition-all ${
+              editor.isActive('bulletList') ? 'text-[#21d4e5] bg-[#21d4e5]/15 border border-[#21d4e5]/30' : 'text-[#91a4a7]'
             }`}
             title="Bullet List"
           >
@@ -1038,8 +1042,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </button>
           <button
             onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-            className={`p-1.5 rounded hover:bg-[#181d2e] ${
-              editor.isActive('codeBlock') ? 'text-cyan-400 bg-[#161a29]' : 'text-slate-400'
+            className={`p-1.5 rounded-md hover:bg-[#121c21] transition-all ${
+              editor.isActive('codeBlock') ? 'text-[#21d4e5] bg-[#21d4e5]/15 border border-[#21d4e5]/30' : 'text-[#91a4a7]'
             }`}
             title="Code Block"
           >
@@ -1048,12 +1052,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </div>
           {formatTypingIndicator(typingUsers) && (
             <div
-              className="flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-cyan-950/60 border border-cyan-400/50 text-cyan-300 text-[10px] font-mono shrink-0 shadow-[0_0_8px_rgba(6,182,212,0.25)]"
+              className="flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-[#21d4e5]/12 border border-[#21d4e5]/40 text-[#21d4e5] text-[10px] font-mono shrink-0 shadow-[0_0_10px_rgba(33,212,229,0.15)]"
               title={typingUsers.join(', ')}
             >
               <span className="flex h-1.5 w-1.5 relative shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#21d4e5] opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#21d4e5]" />
               </span>
               <span className="truncate max-w-[200px]">
                 {formatTypingIndicator(typingUsers)}
@@ -1064,10 +1068,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
       )}
 
       {/* Main Editing Canvas */}
-      <div className="flex-1 overflow-y-auto p-6 md:p-8">
+      <div className="flex-1 overflow-y-auto p-4 md:p-8">
         {isDecrypting ? (
-          <div className="flex items-center space-x-2 text-cyan-400 text-xs font-mono py-12 justify-center">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+          <div className="flex items-center space-x-2.5 text-[#21d4e5] text-xs font-mono py-16 justify-center">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#21d4e5] animate-ping" />
             <span>Decrypting document envelope with Web Crypto AES-256-GCM...</span>
           </div>
         ) : doc.doc_type === 'code' ? (
@@ -1088,13 +1092,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
               onPaste={handleUserTyping}
               onBlur={handleEditorBlur}
               disabled={isLocked || isDecrypting || !collabDoc || currentUserRole === 'viewer'}
-              className="flex-1 w-full bg-[#0a0c13] font-mono text-sm leading-relaxed text-cyan-300 p-4 rounded-lg border border-[#1f2438] focus:outline-none focus:border-cyan-500/50 resize-none"
+              className="flex-1 w-full bg-[#070d10] font-mono text-sm leading-relaxed text-[#21d4e5] p-5 rounded-xl border border-[rgba(100,220,205,0.18)] focus:outline-none focus:border-[#21d4e5] resize-none shadow-xl"
               spellCheck={false}
             />
           </div>
         ) : (
-          /* TipTap Rich Text Area */
-          <div className="max-w-4xl mx-auto">
+          /* TipTap Rich Text Area: High-Contrast Document Canvas */
+          <div className="max-w-4xl mx-auto bg-[#080e12] rounded-2xl border border-[rgba(100,220,205,0.14)] p-6 md:p-10 shadow-[0_12px_45px_rgba(0,0,0,0.6)] min-h-[520px]">
             <EditorContent editor={editor} />
           </div>
         )}

@@ -77,7 +77,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ events, isLocked }) 
   return (
     <div
       style={{ height: collapsed ? '36px' : `${feedHeight}px` }}
-      className={`border-t border-[#212638] bg-[#0c0e16] flex flex-col shrink-0 select-none overflow-hidden relative z-20 transition-[height] ${
+      className={`border-t border-[rgba(100,220,205,0.14)] bg-[#05090b]/95 backdrop-blur-md flex flex-col shrink-0 select-none overflow-hidden relative z-20 transition-[height] ${
         collapsed ? 'duration-200 ease-out' : 'duration-0'
       }`}
     >
@@ -95,38 +95,38 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ events, isLocked }) 
       )}
 
       {/* Terminal Header */}
-      <div className="h-9 px-4 flex items-center justify-between border-b border-[#1b2030] bg-[#090b12] shrink-0">
+      <div className="h-9 px-4 flex items-center justify-between border-b border-[rgba(100,220,205,0.1)] bg-[#070d10] shrink-0">
         <div className="flex items-center space-x-3">
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="flex items-center space-x-1.5 text-xs font-mono font-medium text-slate-300 hover:text-cyan-400 transition-colors focus:outline-none"
+            className="flex items-center space-x-1.5 text-xs font-mono font-bold text-[#f2f7f7] hover:text-[#21d4e5] transition-colors focus:outline-none"
             title={collapsed ? 'Expand Security Audit Stream' : 'Collapse Security Audit Stream'}
           >
-            <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="tracking-wide">SECURITY AUDIT STREAM</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#181d2e] text-slate-400 border border-[#262c42]">
+            <Terminal className="w-3.5 h-3.5 text-[#21d4e5]" />
+            <span className="tracking-wider">SECURITY AUDIT STREAM</span>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-[#0b1115] text-[#91a4a7] border border-[rgba(100,220,205,0.14)]">
               {events.length} events
             </span>
           </button>
 
           {/* Quick Alert Badge if any alerts exist */}
           {alertCount > 0 && (
-            <span className="flex items-center space-x-1 text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-950/60 border border-amber-800/50 text-amber-300 animate-pulse">
+            <span className="flex items-center space-x-1 text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-amber-950/60 border border-amber-800/50 text-amber-300 animate-pulse font-bold">
               <AlertTriangle className="w-3 h-3 text-amber-400" />
               <span>{alertCount} alert{alertCount !== 1 ? 's' : ''}</span>
             </span>
           )}
 
           {!collapsed && (
-            <div className="hidden sm:flex items-center space-x-1 pl-3 border-l border-[#212638]">
+            <div className="hidden sm:flex items-center space-x-1 pl-3 border-l border-[rgba(100,220,205,0.12)]">
               <button
                 type="button"
                 onClick={() => setFilter('all')}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono transition-all ${
                   filter === 'all'
-                    ? 'bg-cyan-950/70 border border-cyan-800/60 text-cyan-300'
-                    : 'text-slate-500 hover:text-slate-300'
+                    ? 'bg-[#21d4e5]/15 border border-[#21d4e5]/40 text-[#21d4e5] font-bold'
+                    : 'text-[#91a4a7] hover:text-[#f2f7f7]'
                 }`}
               >
                 All ({allCount})
@@ -134,10 +134,10 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ events, isLocked }) 
               <button
                 type="button"
                 onClick={() => setFilter('real')}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono transition-all ${
                   filter === 'real'
-                    ? 'bg-cyan-950/70 border border-cyan-800/60 text-cyan-300'
-                    : 'text-slate-500 hover:text-slate-300'
+                    ? 'bg-[#10bfa5]/15 border border-[#10bfa5]/40 text-[#10bfa5] font-bold'
+                    : 'text-[#91a4a7] hover:text-[#f2f7f7]'
                 }`}
               >
                 Real ({realCount})
@@ -145,10 +145,10 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ events, isLocked }) 
               <button
                 type="button"
                 onClick={() => setFilter('simulated')}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono transition-all ${
                   filter === 'simulated'
-                    ? 'bg-cyan-950/70 border border-cyan-800/60 text-cyan-300'
-                    : 'text-slate-500 hover:text-slate-300'
+                    ? 'bg-amber-950/40 border border-amber-800/50 text-amber-300 font-bold'
+                    : 'text-[#91a4a7] hover:text-[#f2f7f7]'
                 }`}
               >
                 Simulated ({simCount})
@@ -156,10 +156,10 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ events, isLocked }) 
               <button
                 type="button"
                 onClick={() => setFilter('alerts')}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono transition-colors ${
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono transition-all ${
                   filter === 'alerts'
-                    ? 'bg-cyan-950/70 border border-cyan-800/60 text-cyan-300'
-                    : 'text-slate-500 hover:text-slate-300'
+                    ? 'bg-red-950/40 border border-red-800/50 text-red-300 font-bold'
+                    : 'text-[#91a4a7] hover:text-[#f2f7f7]'
                 }`}
               >
                 Alerts ({alertCount})
@@ -173,13 +173,13 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ events, isLocked }) 
           <button
             type="button"
             onClick={toggleCollapsed}
-            className="flex items-center space-x-1 px-1.5 py-1 rounded text-slate-400 hover:text-slate-200 hover:bg-[#181d2e] transition-colors text-xs font-mono"
+            className="flex items-center space-x-1 px-2 py-1 rounded-md text-[#91a4a7] hover:text-[#f2f7f7] hover:bg-[#0b1115] transition-all text-xs font-mono"
             title={collapsed ? 'Expand Security Audit Stream' : 'Collapse Security Audit Stream'}
           >
-            <span className="text-[10px] text-slate-500 hidden sm:inline">
+            <span className="text-[10px] text-[#91a4a7] hidden sm:inline">
               {collapsed ? 'Expand' : 'Collapse'}
             </span>
-            {collapsed ? <ChevronUp className="w-3.5 h-3.5 text-cyan-400" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {collapsed ? <ChevronUp className="w-3.5 h-3.5 text-[#21d4e5]" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>
@@ -188,7 +188,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ events, isLocked }) 
       {!collapsed && (
         <div className="flex-1 overflow-y-auto p-2 font-mono text-[11px] space-y-1">
           {filteredEvents.length === 0 ? (
-            <div className="text-slate-600 italic py-4 text-center">
+            <div className="text-[#91a4a7]/60 italic py-4 text-center">
               No audit stream events recorded in current filter.
             </div>
           ) : (
@@ -197,36 +197,36 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ events, isLocked }) 
               const isSim = e.is_simulated;
               const severityColor =
                 e.severity === 'critical' || e.severity === 'alert'
-                  ? 'text-red-400'
+                  ? 'text-red-400 font-bold'
                   : e.severity === 'warning'
-                  ? 'text-amber-400'
-                  : 'text-cyan-400';
+                  ? 'text-amber-400 font-bold'
+                  : 'text-[#21d4e5] font-semibold';
 
               return (
                 <div
                   key={e.id}
-                  className="flex items-start space-x-2 px-2 py-1 rounded hover:bg-[#121522] transition-colors group"
+                  className="flex items-start space-x-2 px-2.5 py-1 rounded-lg hover:bg-[#0b1115]/80 transition-colors group"
                 >
-                  <span className="text-slate-600 shrink-0 select-none">[{dateStr}]</span>
+                  <span className="text-[#91a4a7]/60 shrink-0 select-none">[{dateStr}]</span>
 
                   {/* Real vs Simulated Tag */}
                   <span
-                    className={`px-1 py-0.2 rounded text-[9px] font-bold shrink-0 ${
+                    className={`px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0 ${
                       isSim
-                        ? 'bg-amber-950/60 border border-amber-800/40 text-amber-300'
-                        : 'bg-cyan-950/60 border border-cyan-800/40 text-cyan-300'
+                        ? 'bg-amber-950/50 border border-amber-800/40 text-amber-300'
+                        : 'bg-[#10bfa5]/15 border border-[#10bfa5]/35 text-[#10bfa5]'
                     }`}
                   >
                     {isSim ? 'SIMULATED' : 'REAL'}
                   </span>
 
-                  <span className={`font-semibold shrink-0 ${severityColor}`}>
+                  <span className={`shrink-0 ${severityColor}`}>
                     {e.event_type}
                   </span>
 
-                  <span className="text-slate-400 shrink-0">by @{e.username}:</span>
+                  <span className="text-[#91a4a7] shrink-0">by @{e.username}:</span>
 
-                  <span className="text-slate-300 truncate">
+                  <span className="text-[#f2f7f7] truncate">
                     {e.details?.title
                       ? `"${e.details.title}"`
                       : e.details?.reason

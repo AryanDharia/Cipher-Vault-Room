@@ -1,5 +1,17 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { ArrowRight, Check, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  LockKeyhole,
+  ShieldCheck,
+  UserRound,
+  Eye,
+  EyeOff,
+  Shield,
+  KeyRound,
+  Lock,
+  Cpu
+} from 'lucide-react';
 import './auth-switch.css';
 
 export type AuthMode = 'signin' | 'signup';
@@ -13,6 +25,7 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
   const [mode, setMode] = useState<AuthMode>('signin');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const submitting = useRef(false);
@@ -50,49 +63,85 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
 
   return (
     <main className="vr-auth">
+      {/* Background with user-provided artwork & dark overlay */}
+      <div className="cyber-bg-container" aria-hidden="true">
+        <div className="cyber-bg-overlay" />
+      </div>
+
       <div className="vr-auth__ambient" aria-hidden="true">
         <span className="vr-auth__orb vr-auth__orb--cyan" />
-        <span className="vr-auth__orb vr-auth__orb--teal" />
+        <span className="vr-auth__orb vr-auth__orb--emerald" />
         <span className="vr-auth__grid" />
       </div>
 
       <section className="vr-auth__layout" aria-label="VaultRoom authentication">
+        {/* Left Side: Brand Story & Security Badging */}
         <aside className="vr-auth__story">
           <div className="vr-auth__brand">
-            <span className="vr-auth__brand-mark" aria-hidden="true">V</span>
-            <span className="vr-auth__brand-name">VAULT<span>ROOM</span></span>
+            <div className="vr-auth__brand-icon">
+              <Shield className="w-5 h-5 text-[#21d4e5]" />
+            </div>
+            <div className="vr-auth__brand-text">
+              <span className="vr-auth__brand-name">VAULT<span>ROOM</span></span>
+              <span className="vr-auth__brand-badge">AES-256 E2EE</span>
+            </div>
           </div>
 
           <div className="vr-auth__story-copy">
-            <p className="vr-auth__kicker"><span /> PRIVATE BY DESIGN</p>
-            <h1>Your work.<br /><em>Your space.</em></h1>
+            <p className="vr-auth__kicker">
+              <span className="vr-auth__kicker-dot" /> ZERO-KNOWLEDGE PROTOCOL
+            </p>
+            <h1>Confidential<br /><em>Workspace.</em></h1>
             <p className="vr-auth__lede">
-              A secure space to collaborate and manage documents.
+              Next-generation cryptographic collaboration. Your documents and secret vaults are client-side encrypted before transmission.
             </p>
           </div>
 
-          <ul className="vr-auth__highlights" aria-label="VaultRoom features">
-            <li><span><Check size={14} aria-hidden="true" /></span> Private rooms</li>
-            <li><span><Check size={14} aria-hidden="true" /></span> Secure document sharing</li>
-            <li><span><Check size={14} aria-hidden="true" /></span> Real-time collaboration</li>
+          <ul className="vr-auth__highlights" aria-label="VaultRoom security guarantees">
+            <li>
+              <span><Check size={14} aria-hidden="true" /></span>
+              <div>
+                <strong>Zero-Knowledge Encryption</strong>
+                <p>Client-derived keys never leave your browser device.</p>
+              </div>
+            </li>
+            <li>
+              <span><Check size={14} aria-hidden="true" /></span>
+              <div>
+                <strong>Quorum-Protected Vaults</strong>
+                <p>Multi-party consensus required for sensitive actions.</p>
+              </div>
+            </li>
+            <li>
+              <span><Check size={14} aria-hidden="true" /></span>
+              <div>
+                <strong>Real-Time Encrypted Yjs</strong>
+                <p>Collaborative TipTap editor with automated state synchronization.</p>
+              </div>
+            </li>
           </ul>
 
           <div className="vr-auth__story-foot">
-            <ShieldCheck size={16} aria-hidden="true" />
-            <span>SECURE COLLABORATION, SIMPLIFIED</span>
+            <ShieldCheck size={15} aria-hidden="true" className="text-[#10bfa5]" />
+            <span>AUTHENTICATED CRYPTOGRAPHIC ENCLAVE</span>
           </div>
         </aside>
 
+        {/* Right Side: Authentication Panel */}
         <section className="vr-auth__panel" aria-labelledby="vr-auth-heading">
           <div className="vr-auth__panel-top">
-            <span className="vr-auth__secure-mark"><LockKeyhole size={15} aria-hidden="true" /> SECURE ACCESS</span>
-            <span className="vr-auth__panel-index">01 <i /> 02</span>
+            <span className="vr-auth__secure-mark">
+              <LockKeyhole size={14} aria-hidden="true" /> SECURE SESSION
+            </span>
+            <span className="vr-auth__panel-index">
+              <Cpu size={13} className="inline mr-1 text-[#10bfa5]" /> ENCLAVE V2.4
+            </span>
           </div>
 
           <div className="vr-auth__heading" key={mode}>
-            <p>{isSignUp ? 'YOUR WORKSPACE STARTS HERE' : 'GOOD TO HAVE YOU BACK'}</p>
-            <h2 id="vr-auth-heading">{isSignUp ? 'Create your account' : 'Welcome back'}</h2>
-            <span>{isSignUp ? 'Set up your VaultRoom account to get started.' : 'Sign in to continue to your workspace.'}</span>
+            <p>{isSignUp ? 'REGISTER CREDENTIALS' : 'VERIFY IDENTITY'}</p>
+            <h2 id="vr-auth-heading">{isSignUp ? 'Create Vault Account' : 'Welcome to VaultRoom'}</h2>
+            <span>{isSignUp ? 'Initialize your cryptographic credentials.' : 'Authenticate to unlock your encrypted workspaces.'}</span>
           </div>
 
           {notification && (
@@ -110,7 +159,9 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
               className={!isSignUp ? 'is-active' : ''}
               disabled={loading}
               onClick={() => switchMode('signin')}
-            >Sign In</button>
+            >
+              Sign In
+            </button>
             <button
               id="vr-signup-tab"
               type="button"
@@ -119,7 +170,9 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
               className={isSignUp ? 'is-active' : ''}
               disabled={loading}
               onClick={() => switchMode('signup')}
-            >Sign Up</button>
+            >
+              Sign Up
+            </button>
             <span className={`vr-auth__tab-indicator${isSignUp ? ' is-right' : ''}`} aria-hidden="true" />
           </div>
 
@@ -132,7 +185,7 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
               <div className="vr-auth__field">
                 <label htmlFor="vr-auth-username">Username</label>
                 <div className="vr-auth__input-wrap">
-                  <UserRound size={17} aria-hidden="true" />
+                  <UserRound size={17} aria-hidden="true" className="vr-auth__icon" />
                   <input
                     id="vr-auth-username"
                     name="username"
@@ -142,7 +195,7 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
                     spellCheck={false}
                     minLength={3}
                     maxLength={50}
-                    placeholder="Your username"
+                    placeholder="e.g. sec_operator"
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     disabled={loading}
@@ -154,39 +207,58 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
               <div className="vr-auth__field">
                 <label htmlFor="vr-auth-password">Password</label>
                 <div className="vr-auth__input-wrap">
-                  <LockKeyhole size={17} aria-hidden="true" />
+                  <KeyRound size={17} aria-hidden="true" className="vr-auth__icon" />
                   <input
                     id="vr-auth-password"
                     name="password"
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     autoComplete={isSignUp ? 'new-password' : 'current-password'}
                     aria-describedby={isSignUp ? 'vr-auth-password-hint' : undefined}
                     minLength={isSignUp ? 6 : 1}
-                    placeholder="Enter your password"
+                    placeholder="Enter passphrase"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     disabled={loading}
                     required
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="vr-auth__visibility-btn"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
-                {isSignUp && <span className="vr-auth__hint" id="vr-auth-password-hint">Use at least 6 characters.</span>}
+                {isSignUp && (
+                  <span className="vr-auth__hint" id="vr-auth-password-hint">
+                    Minimum 6 characters. Used to salt your authorization token.
+                  </span>
+                )}
               </div>
 
               {error && <div className="vr-auth__error" role="alert">{error}</div>}
 
               <button className="vr-auth__submit" type="submit" disabled={loading}>
                 {loading ? (
-                  <><span className="vr-auth__spinner" aria-hidden="true" /><span aria-live="polite">{isSignUp ? 'Creating account…' : 'Signing in…'}</span></>
+                  <>
+                    <span className="vr-auth__spinner" aria-hidden="true" />
+                    <span aria-live="polite">{isSignUp ? 'Creating account…' : 'Authenticating…'}</span>
+                  </>
                 ) : (
-                  <>{isSignUp ? 'Create account' : 'Sign in'}<ArrowRight size={17} aria-hidden="true" /></>
+                  <>
+                    <span>{isSignUp ? 'Create Encrypted Account' : 'Authenticate & Unlock'}</span>
+                    <ArrowRight size={17} aria-hidden="true" />
+                  </>
                 )}
               </button>
             </form>
           </div>
 
           <footer className="vr-auth__footer">
-            <span><LockKeyhole size={12} aria-hidden="true" /> Your access is protected</span>
-            <span>VAULTROOM <b>·</b> PRIVATE WORKSPACE</span>
+            <span><Lock size={12} aria-hidden="true" /> TLS 1.3 · End-to-End Encrypted</span>
+            <span>VAULTROOM <b>·</b> SECURE ENCLAVE</span>
           </footer>
         </section>
       </section>

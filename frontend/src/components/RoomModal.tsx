@@ -15,6 +15,9 @@ import {
   KeyRound,
   FileText,
   AlertTriangle,
+  Eye,
+  EyeOff,
+  Cpu
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { deriveRoomKey } from '../lib/crypto';
@@ -45,6 +48,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   const [roomName, setRoomName] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [passphrase, setPassphrase] = useState('');
+  const [showPassphrase, setShowPassphrase] = useState(false);
 
   // Simplified UI controls
   const [numHosts, setNumHosts] = useState(2);
@@ -156,10 +160,15 @@ export const RoomModal: React.FC<RoomModalProps> = ({
 
   return (
     <div className="vr-room" role="dialog" aria-modal="true" aria-labelledby="vr-room-heading">
+      {/* Background with user-provided artwork & dark overlay */}
+      <div className="cyber-bg-container" aria-hidden="true">
+        <div className="cyber-bg-overlay" />
+      </div>
+
       {/* Ambient Cyber Grid & Floating Radiant Orbs */}
       <div className="vr-room__ambient" aria-hidden="true">
         <span className="vr-room__orb vr-room__orb--cyan" />
-        <span className="vr-room__orb vr-room__orb--teal" />
+        <span className="vr-room__orb vr-room__orb--emerald" />
         <span className="vr-room__grid" />
       </div>
 
@@ -167,10 +176,12 @@ export const RoomModal: React.FC<RoomModalProps> = ({
       <header className="vr-room__top-bar">
         {/* Brand Identity */}
         <div className="vr-room__brand">
-          <span className="vr-room__brand-mark" aria-hidden="true">V</span>
+          <div className="vr-room__brand-mark" aria-hidden="true">
+            <Shield className="w-5 h-5 text-[#21d4e5]" />
+          </div>
           <div className="vr-room__brand-text">
             <span className="vr-room__brand-name">VAULT<span>ROOM</span></span>
-            <span className="vr-room__brand-tag">ZERO-KNOWLEDGE WORKSPACE</span>
+            <span className="vr-room__brand-tag">ZERO-KNOWLEDGE ENCLAVE</span>
           </div>
         </div>
 
@@ -208,7 +219,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                     <span className="vr-room__dropdown-role">{user.role || 'Member'}</span>
                   </div>
                   {user.id && (
-                    <div className="vr-room__dropdown-meta" style={{ marginTop: '2px', color: '#687a82' }}>
+                    <div className="vr-room__dropdown-meta" style={{ marginTop: '2px', color: '#91a4a7' }}>
                       <span>ID:</span>
                       <span>{user.id.slice(0, 8)}…</span>
                     </div>
@@ -226,7 +237,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                       }}
                       className="vr-room__dropdown-btn"
                     >
-                      <LogOut size={14} style={{ color: '#e5a73b' }} aria-hidden="true" />
+                      <LogOut size={14} style={{ color: '#f59e0b' }} aria-hidden="true" />
                       <span>Sign Out</span>
                     </button>
                   )}
@@ -265,16 +276,16 @@ export const RoomModal: React.FC<RoomModalProps> = ({
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
         >
-          <circle cx="150" cy="150" r="140" stroke="currentColor" strokeWidth="1" strokeDasharray="4 6" opacity="0.4" />
-          <circle cx="150" cy="150" r="115" stroke="currentColor" strokeWidth="1.5" opacity="0.6" />
-          <circle cx="150" cy="150" r="85" stroke="currentColor" strokeWidth="1" opacity="0.5" />
-          <circle cx="150" cy="150" r="50" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 4" opacity="0.8" />
-          <path d="M150 10 V35 M150 265 V290 M10 150 H35 M265 150 H290" stroke="currentColor" strokeWidth="2" opacity="0.6" />
-          <path d="M51 51 L68 68 M232 232 L249 249 M51 249 L68 232 M232 68 L249 51" stroke="currentColor" strokeWidth="1.5" opacity="0.4" />
-          <rect x="135" y="130" width="30" height="36" rx="6" stroke="currentColor" strokeWidth="2" opacity="0.9" />
-          <path d="M141 130 V122 C141 117 145 113 150 113 C155 113 159 117 159 122 V130" stroke="currentColor" strokeWidth="2" opacity="0.9" />
-          <circle cx="150" cy="145" r="3" fill="currentColor" opacity="0.9" />
-          <path d="M150 148 V155" stroke="currentColor" strokeWidth="2" opacity="0.9" />
+          <circle cx="150" cy="150" r="140" stroke="currentColor" strokeWidth="1" strokeDasharray="4 6" opacity="0.3" />
+          <circle cx="150" cy="150" r="115" stroke="currentColor" strokeWidth="1.5" opacity="0.5" />
+          <circle cx="150" cy="150" r="85" stroke="currentColor" strokeWidth="1" opacity="0.4" />
+          <circle cx="150" cy="150" r="50" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 4" opacity="0.7" />
+          <path d="M150 10 V35 M150 265 V290 M10 150 H35 M265 150 H290" stroke="currentColor" strokeWidth="2" opacity="0.5" />
+          <path d="M51 51 L68 68 M232 232 L249 249 M51 249 L68 232 M232 68 L249 51" stroke="currentColor" strokeWidth="1.5" opacity="0.35" />
+          <rect x="135" y="130" width="30" height="36" rx="6" stroke="currentColor" strokeWidth="2" opacity="0.8" />
+          <path d="M141 130 V122 C141 117 145 113 150 113 C155 113 159 117 159 122 V130" stroke="currentColor" strokeWidth="2" opacity="0.8" />
+          <circle cx="150" cy="145" r="3" fill="currentColor" opacity="0.8" />
+          <path d="M150 148 V155" stroke="currentColor" strokeWidth="2" opacity="0.8" />
         </svg>
 
         {/* Card Top Row: Security Tag & Index */}
@@ -283,7 +294,9 @@ export const RoomModal: React.FC<RoomModalProps> = ({
             <LockKeyhole size={14} aria-hidden="true" />
             <span>Secure Workspace Gateway</span>
           </span>
-          <span className="vr-room__card-index">01 <i aria-hidden="true" /> 02</span>
+          <span className="vr-room__card-index">
+            <Cpu size={12} className="inline mr-1 text-[#10bfa5]" /> STEP {isCreate ? '01' : '02'}
+          </span>
         </div>
 
         {/* Dynamic Heading based on mode */}
@@ -361,7 +374,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                     type="text"
                     required
                     disabled={loading}
-                    placeholder="e.g. Series-A Deal Room"
+                    placeholder="e.g. Confidential Project Vault"
                     value={roomName}
                     onChange={(e) => setRoomName(e.target.value)}
                     spellCheck={false}
@@ -402,7 +415,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                 <div className="vr-room__field">
                   <div className="vr-room__label-row">
                     <label htmlFor="vr-max-members" className="vr-room__label">
-                      <Users size={13} style={{ color: 'var(--vr-teal)' }} aria-hidden="true" />
+                      <Users size={13} style={{ color: 'var(--vr-emerald)' }} aria-hidden="true" />
                       <span>Total Members Allowed</span>
                     </label>
                   </div>
@@ -453,7 +466,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                     <div className="vr-room__advanced-info">
                       <Info size={15} aria-hidden="true" />
                       <div>
-                        <strong style={{ color: '#edf4f5', display: 'block', marginBottom: '2px' }}>
+                        <strong style={{ color: '#f2f7f7', display: 'block', marginBottom: '2px' }}>
                           M-of-N Cryptographic Approvals
                         </strong>
                         Threshold consensus prevents single-person compromise. Unlocking protected documents or sensitive vault secrets requires approval from at least <strong>{thresholdReq}</strong> of <strong>{thresholdTot}</strong> designated key holders.
@@ -556,7 +569,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
           <div className="vr-room__field">
             <div className="vr-room__label-row">
               <label htmlFor="vr-room-passphrase" className="vr-room__label">
-                <LockKeyhole size={13} style={{ color: 'var(--vr-teal)' }} aria-hidden="true" />
+                <LockKeyhole size={13} style={{ color: 'var(--vr-emerald)' }} aria-hidden="true" />
                 <span>Zero-Knowledge Passphrase</span>
               </label>
               <span className="vr-room__label-badge">CLIENT-SIDE ONLY</span>
@@ -565,13 +578,22 @@ export const RoomModal: React.FC<RoomModalProps> = ({
               <LockKeyhole size={16} aria-hidden="true" />
               <input
                 id="vr-room-passphrase"
-                type="password"
+                type={showPassphrase ? 'text' : 'password'}
                 required
                 disabled={loading}
                 placeholder="Shared room decryption passphrase..."
                 value={passphrase}
                 onChange={(e) => setPassphrase(e.target.value)}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassphrase(!showPassphrase)}
+                className="vr-room__visibility-btn"
+                title={showPassphrase ? 'Hide passphrase' : 'Show passphrase'}
+                aria-label={showPassphrase ? 'Hide passphrase' : 'Show passphrase'}
+              >
+                {showPassphrase ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
             <span className="vr-room__field-hint">
               Derives local AES-256-GCM key via PBKDF2 with 100,000 rounds. Server never observes your passphrase or key.
@@ -587,11 +609,11 @@ export const RoomModal: React.FC<RoomModalProps> = ({
             {loading ? (
               <>
                 <span className="vr-room__spinner" aria-hidden="true" />
-                <span>{isCreate ? 'Initializing Vault...' : 'Connecting to Room...'}</span>
+                <span>{isCreate ? 'Initializing Vault Enclave...' : 'Authenticating to Room...'}</span>
               </>
             ) : (
               <>
-                <span>{isCreate ? 'Create Secure Room' : 'Join Room'}</span>
+                <span>{isCreate ? 'Deploy Secure Room' : 'Join Encrypted Room'}</span>
                 <ArrowRight size={16} aria-hidden="true" />
               </>
             )}
@@ -602,7 +624,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
         <footer className="vr-room__footer">
           <div className="vr-room__footer-left">
             <LockKeyhole size={12} aria-hidden="true" />
-            <span>End-to-end encrypted · Zero-knowledge</span>
+            <span>End-to-End Encrypted · Zero-Knowledge</span>
           </div>
           <div className="vr-room__footer-right">
             <span>AES-256-GCM · PBKDF2</span>

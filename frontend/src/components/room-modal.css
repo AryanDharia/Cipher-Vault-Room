@@ -4,13 +4,14 @@
    ========================================================================== */
 
 .vr-room {
-  --vr-cyan: #36d5df;
-  --vr-teal: #39c8b1;
-  --vr-ink: #090d12;
-  --vr-panel: #10171e;
-  --vr-line: rgba(185, 210, 220, 0.12);
-  --vr-muted: #91a1ac;
-  --vr-surface: rgba(14, 20, 25, 0.88);
+  --vr-cyan: #21d4e5;
+  --vr-teal: #10bfa5;
+  --vr-emerald: #10bfa5;
+  --vr-ink: #05090b;
+  --vr-panel: #0b1115;
+  --vr-line: rgba(100, 220, 205, 0.14);
+  --vr-muted: #91a4a7;
+  --vr-surface: rgba(12, 22, 25, 0.88);
   --vr-input-bg: rgba(6, 11, 15, 0.65);
 
   position: fixed;
@@ -923,4 +924,20 @@
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.vr-room__visibility-btn {
+  background: none;
+  border: none;
+  color: var(--vr-muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border-radius: 6px;
+  transition: color 0.15s, background-color 0.15s;
+}
+.vr-room__visibility-btn:hover {
+  color: var(--vr-cyan);
+  background: rgba(33, 212, 229, 0.1);
 }

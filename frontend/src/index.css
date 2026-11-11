@@ -2,19 +2,20 @@
 
 @layer base {
   :root {
-    --bg-main: #0a0b10;
-    --bg-surface: #10121b;
-    --bg-panel: #141724;
-    --bg-panel-hover: #1b1f30;
-    --border-subtle: #212638;
-    --border-accent: #2e354f;
-    --accent-cyan: #06b6d4;
-    --accent-teal: #14b8a6;
+    --bg-main: #05090b;
+    --bg-surface: #0b1115;
+    --bg-card: rgba(12, 22, 25, 0.78);
+    --bg-panel: rgba(14, 25, 29, 0.82);
+    --bg-panel-hover: rgba(22, 38, 44, 0.9);
+    --border-subtle: rgba(100, 220, 205, 0.14);
+    --border-accent: rgba(33, 212, 229, 0.45);
+    --accent-emerald: #10bfa5;
+    --accent-cyan: #21d4e5;
     --accent-amber: #f59e0b;
     --accent-red: #ef4444;
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    --text-primary: #f2f7f7;
+    --text-secondary: #91a4a7;
+    --text-muted: #5c7275;
   }
 
   body {
@@ -22,6 +23,8 @@
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     overflow-x: hidden;
+    margin: 0;
+    padding: 0;
   }
 
   code, pre, .font-mono {
@@ -29,27 +32,65 @@
   }
 }
 
-/* Custom subtle scrollbar */
+/* Custom Cyber Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: #0a0b10;
+  background: rgba(5, 9, 11, 0.8);
 }
 ::-webkit-scrollbar-thumb {
-  background: #212638;
-  border-radius: 3px;
+  background: rgba(100, 220, 205, 0.22);
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #333b56;
+  background: rgba(33, 212, 229, 0.45);
+}
+
+/* Cyber Ambient Background Container */
+.cyber-bg-container {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: #05090b;
+  background-image: url('/images/vaultroom-background.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.cyber-bg-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 30%, rgba(5, 9, 11, 0.72) 0%, rgba(5, 9, 11, 0.90) 100%),
+              linear-gradient(180deg, rgba(5, 9, 11, 0.70) 0%, rgba(5, 9, 11, 0.88) 100%);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* Glassmorphism Panels */
+.cyber-glass-panel {
+  background: rgba(12, 22, 25, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(100, 220, 205, 0.14);
+}
+
+.cyber-glass-card {
+  background: rgba(12, 22, 25, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(100, 220, 205, 0.16);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 1px rgba(33, 212, 229, 0.2) inset;
 }
 
 /* TipTap Editor Styles */
 .tiptap {
   outline: none;
   min-height: 380px;
-  color: #f1f5f9;
+  color: #f2f7f7;
   font-size: 0.975rem;
   line-height: 1.7;
 }
@@ -63,7 +104,7 @@
   font-weight: 700;
   margin-top: 1.2em;
   margin-bottom: 0.6em;
-  color: #f8fafc;
+  color: #f2f7f7;
   letter-spacing: -0.02em;
 }
 
@@ -72,7 +113,7 @@
   font-weight: 600;
   margin-top: 1em;
   margin-bottom: 0.5em;
-  color: #f1f5f9;
+  color: #21d4e5;
 }
 
 .tiptap h3 {
@@ -80,7 +121,7 @@
   font-weight: 600;
   margin-top: 0.8em;
   margin-bottom: 0.4em;
-  color: #e2e8f0;
+  color: #10bfa5;
 }
 
 .tiptap ul, .tiptap ol {
@@ -97,19 +138,21 @@
 }
 
 .tiptap blockquote {
-  border-left: 3px solid #06b6d4;
+  border-left: 3px solid #21d4e5;
   padding-left: 1rem;
   margin-left: 0;
   margin-right: 0;
-  color: #94a3b8;
+  color: #91a4a7;
   font-style: italic;
+  background: rgba(33, 212, 229, 0.04);
+  border-radius: 0 6px 6px 0;
 }
 
 .tiptap pre {
-  background: #0d0f17;
-  border: 1px solid #212638;
-  border-radius: 6px;
-  color: #38bdf8;
+  background: #080d10;
+  border: 1px solid rgba(100, 220, 205, 0.18);
+  border-radius: 8px;
+  color: #21d4e5;
   font-family: ui-monospace, SFMono-Regular, monospace;
   padding: 0.85rem 1rem;
   margin: 1rem 0;
@@ -117,12 +160,12 @@
 }
 
 .tiptap code {
-  background: #141724;
-  border: 1px solid #212638;
+  background: rgba(16, 191, 165, 0.12);
+  border: 1px solid rgba(16, 191, 165, 0.25);
   border-radius: 4px;
   padding: 0.15rem 0.35rem;
   font-size: 0.875em;
-  color: #38bdf8;
+  color: #21d4e5;
 }
 
 /* TipTap Remote Collaborator Cursors */
@@ -130,8 +173,8 @@
   position: relative;
   margin-left: -1px;
   margin-right: -1px;
-  border-left: 1px solid #06b6d4;
-  border-right: 1px solid #06b6d4;
+  border-left: 1px solid #21d4e5;
+  border-right: 1px solid #21d4e5;
   word-break: normal;
   pointer-events: none;
 }
@@ -145,8 +188,14 @@
   font-weight: 600;
   line-height: normal;
   user-select: none;
-  color: #0a0b10;
-  padding: 1px 4px;
-  border-radius: 3px;
+  color: #05090b;
+  padding: 1px 5px;
+  border-radius: 4px;
   white-space: nowrap;
+}
+
+/* Accessible focus visible rings */
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #21d4e5;
+  outline-offset: 1px;
 }
