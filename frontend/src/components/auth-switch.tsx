@@ -64,8 +64,8 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
   return (
     <main className="vr-auth">
       {/* Background with user-provided artwork & dark overlay */}
-      <div className="cyber-bg-container" aria-hidden="true">
-        <div className="cyber-bg-overlay" />
+      <div className="cyber-bg-container pointer-events-none" aria-hidden="true">
+        <div className="cyber-bg-overlay pointer-events-none" />
       </div>
 
       <div className="vr-auth__ambient" aria-hidden="true">

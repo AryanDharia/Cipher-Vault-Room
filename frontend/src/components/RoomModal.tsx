@@ -161,8 +161,8 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   return (
     <div className="vr-room" role="dialog" aria-modal="true" aria-labelledby="vr-room-heading">
       {/* Background with user-provided artwork & dark overlay */}
-      <div className="cyber-bg-container" aria-hidden="true">
-        <div className="cyber-bg-overlay" />
+      <div className="cyber-bg-container pointer-events-none" aria-hidden="true">
+        <div className="cyber-bg-overlay pointer-events-none" />
       </div>
 
       {/* Ambient Cyber Grid & Floating Radiant Orbs */}
