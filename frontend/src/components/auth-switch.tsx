@@ -27,13 +27,14 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState('');
   const [error, setError] = useState('');
   const submitting = useRef(false);
   const isSignUp = mode === 'signup';
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current) return;
+    if (submitting.current || loading) return;
 
     const normalizedUsername = username.trim();
     if (!normalizedUsername || !password) {
@@ -43,14 +44,25 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
 
     submitting.current = true;
     setLoading(true);
+    setLoadingPhase(isSignUp ? 'Initializing credentials…' : 'Verifying identity…');
     setError('');
+
+    // Advance status message if verification takes longer (e.g. cold start or remote network)
+    const stageTimer = setTimeout(() => {
+      if (submitting.current) {
+        setLoadingPhase(isSignUp ? 'Deriving keys & securing enclave…' : 'Establishing secure session…');
+      }
+    }, 250);
+
     try {
       await onAuthenticate(mode, normalizedUsername, password);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Authentication failed.');
     } finally {
+      clearTimeout(stageTimer);
       submitting.current = false;
       setLoading(false);
+      setLoadingPhase('');
     }
   }
 
@@ -244,7 +256,7 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
                 {loading ? (
                   <>
                     <span className="vr-auth__spinner" aria-hidden="true" />
-                    <span aria-live="polite">{isSignUp ? 'Creating account…' : 'Signing in…'}</span>
+                    <span aria-live="polite">{loadingPhase || (isSignUp ? 'Creating account…' : 'Signing in…')}</span>
                   </>
                 ) : (
                   <>

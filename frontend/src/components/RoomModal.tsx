@@ -713,6 +713,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                       onChange={(e) => setNumHosts(Number(e.target.value))}
                       disabled={loading}
                       className="vr-room__select"
+                      style={{ WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
                     >
                       <option value={1}>1 Host (Solo Owner)</option>
                       <option value={2}>2 Hosts (Host + Co-Host)</option>
@@ -740,6 +741,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                       onChange={(e) => setMaxMembers(Number(e.target.value))}
                       disabled={loading}
                       className="vr-room__select"
+                      style={{ WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
                     >
                       <option value={5}>5 Members (Small Team)</option>
                       <option value={10}>10 Members (Standard)</option>
@@ -824,6 +826,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                             }}
                             disabled={loading}
                             className="vr-room__select"
+                            style={{ WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
                           >
                             <option value={1}>1 Approval (Instant)</option>
                             <option value={2}>2 Approvals (Consensus)</option>
@@ -848,6 +851,7 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                             }}
                             disabled={loading}
                             className="vr-room__select"
+                            style={{ WebkitAppearance: 'none', MozAppearance: 'none', appearance: 'none' }}
                           >
                             <option value={1}>1 Holder</option>
                             <option value={2}>2 Holders</option>

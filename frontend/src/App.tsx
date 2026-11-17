@@ -878,6 +878,7 @@ export function App() {
   }
 
   const handleConfirmSignOut = () => {
+    clearDerivedKeyCache();
     if (roomCode) {
       localStorage.removeItem('vaultroom_active_room_code');
       void secureStorage.delete(`room-pass-${roomCode}`);
@@ -917,6 +918,7 @@ export function App() {
 
   const handleConfirmDeleteAccount = async (password: string) => {
     await api.deleteAccount(password);
+    clearDerivedKeyCache();
     if (roomCode) {
       localStorage.removeItem('vaultroom_active_room_code');
       void secureStorage.delete(`room-pass-${roomCode}`);
