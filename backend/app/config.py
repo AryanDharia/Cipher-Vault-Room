@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = (
         "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:5174,http://127.0.0.1:5174,"
         "https://cipher-vault-room.pages.dev,"
         "http://tauri.localhost,https://tauri.localhost,tauri://localhost"
     )
