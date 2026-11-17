@@ -568,15 +568,27 @@ export const RoomModal: React.FC<RoomModalProps> = ({
             )}
 
             {admissionStatus === 'rejected' && (
-              <div className="vr-room__reentry-status vr-room__reentry-status--rejected">
-                <XCircle size={15} aria-hidden="true" />
-                <div>
-                  <div className="vr-room__status-bold text-red-400">Request Declined</div>
-                  <div className="vr-room__status-hint">
-                    The host did not approve entry for this room code.
+              <>
+                <div className="vr-room__reentry-status vr-room__reentry-status--rejected">
+                  <XCircle size={15} aria-hidden="true" />
+                  <div>
+                    <div className="vr-room__status-bold text-red-400">Request Declined</div>
+                    <div className="vr-room__status-hint">
+                      The host did not approve entry for this room code.
+                    </div>
                   </div>
                 </div>
-              </div>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={loading}
+                  className="vr-room__reentry-btn"
+                  style={{ marginTop: '12px' }}
+                >
+                  <RotateCcw size={14} aria-hidden="true" />
+                  <span>Request Admission Again</span>
+                </button>
+              </>
             )}
           </div>
         )}
@@ -629,15 +641,27 @@ export const RoomModal: React.FC<RoomModalProps> = ({
             )}
 
             {reentryStatus === 'rejected' && (
-              <div className="vr-room__reentry-status vr-room__reentry-status--rejected">
-                <XCircle size={15} aria-hidden="true" />
-                <div>
-                  <div className="vr-room__status-bold text-red-400">Request Declined</div>
-                  <div className="vr-room__status-hint">
-                    The room host declined your re-entry request.
+              <>
+                <div className="vr-room__reentry-status vr-room__reentry-status--rejected">
+                  <XCircle size={15} aria-hidden="true" />
+                  <div>
+                    <div className="vr-room__status-bold text-red-400">Request Declined</div>
+                    <div className="vr-room__status-hint">
+                      The room host declined your re-entry request.
+                    </div>
                   </div>
                 </div>
-              </div>
+                <button
+                  type="button"
+                  onClick={handleRequestReentry}
+                  disabled={reentrySubmitting}
+                  className="vr-room__reentry-btn"
+                  style={{ marginTop: '12px' }}
+                >
+                  <RotateCcw size={14} aria-hidden="true" />
+                  <span>{reentrySubmitting ? 'Submitting request...' : 'Request Re-entry Authorization Again'}</span>
+                </button>
+              </>
             )}
           </div>
         )}

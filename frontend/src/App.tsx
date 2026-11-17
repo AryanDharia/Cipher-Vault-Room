@@ -960,41 +960,43 @@ export function App() {
       )}
 
       {/* Top Navigation */}
-      <div className="relative z-10 shrink-0">
-        <Navbar
-        roomCode={roomCode}
-        roomName={roomName}
-        isLocked={isLocked}
-        lockReason={lockReason}
-        connectionState={connectionState}
-        user={user}
-        currentUserRole={currentUserRole}
-        onLeaveRoom={() => {
-          if (roomCode) {
-            localStorage.removeItem('vaultroom_active_room_code');
-            void secureStorage.delete(`room-pass-${roomCode}`);
-            localStorage.removeItem(`vaultroom_doc_${roomCode}`);
-          }
-          setRoomCode(null);
-          setRoomKey(null);
-          setDocuments([]);
-          setMembers([]);
-          setOnlineUsers([]);
-          setLatestPresence(null);
-        }}
-        onLogout={() => setShowSignOutModal(true)}
-        onDeleteRoom={() => setShowDeleteRoomModal(true)}
-        onOpenDeleteAccount={() => setShowDeleteAccountModal(true)}
-        onOpenHeist={() => setShowHeistModal(true)}
-        onToggleLock={handleToggleLock}
-        activeRightTab={activeRightTab}
-        setActiveRightTab={setActiveRightTab}
-        isLeftCollapsed={isLeftCollapsed}
-        onToggleLeftSidebar={handleToggleLeftSidebar}
-        isRightCollapsed={isRightCollapsed}
-        onToggleRightSidebar={handleToggleRightSidebar}
-      />
-      </div>
+      {roomCode && (
+        <div className="relative z-10 shrink-0">
+          <Navbar
+            roomCode={roomCode}
+            roomName={roomName}
+            isLocked={isLocked}
+            lockReason={lockReason}
+            connectionState={connectionState}
+            user={user}
+            currentUserRole={currentUserRole}
+            onLeaveRoom={() => {
+              if (roomCode) {
+                localStorage.removeItem('vaultroom_active_room_code');
+                void secureStorage.delete(`room-pass-${roomCode}`);
+                localStorage.removeItem(`vaultroom_doc_${roomCode}`);
+              }
+              setRoomCode(null);
+              setRoomKey(null);
+              setDocuments([]);
+              setMembers([]);
+              setOnlineUsers([]);
+              setLatestPresence(null);
+            }}
+            onLogout={() => setShowSignOutModal(true)}
+            onDeleteRoom={() => setShowDeleteRoomModal(true)}
+            onOpenDeleteAccount={() => setShowDeleteAccountModal(true)}
+            onOpenHeist={() => setShowHeistModal(true)}
+            onToggleLock={handleToggleLock}
+            activeRightTab={activeRightTab}
+            setActiveRightTab={setActiveRightTab}
+            isLeftCollapsed={isLeftCollapsed}
+            onToggleLeftSidebar={handleToggleLeftSidebar}
+            isRightCollapsed={isRightCollapsed}
+            onToggleRightSidebar={handleToggleRightSidebar}
+          />
+        </div>
+      )}
 
       {/* Main Workspace Layout */}
       {roomCode ? (
@@ -1183,7 +1185,7 @@ export function App() {
         </div>
       ) : (
         /* Room Join / Lobby Screen */
-        <div className="relative z-10 flex-1 flex overflow-hidden">
+        <div className="relative z-10 flex-1 flex flex-col min-h-0 overflow-y-auto">
           <RoomModal
             isOpen={true}
             user={user}

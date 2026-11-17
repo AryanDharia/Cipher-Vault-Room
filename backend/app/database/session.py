@@ -35,6 +35,18 @@ async def init_db():
         
         # Apply schema extensions if table already exists (safe for SQLite and PostgreSQL)
         migration_statements = [
+            """
+            CREATE TABLE IF NOT EXISTS waiting_room_requests (
+                id VARCHAR(36) PRIMARY KEY,
+                room_id VARCHAR(36) NOT NULL,
+                user_id VARCHAR(36) NOT NULL,
+                request_type VARCHAR(20) DEFAULT 'join' NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending' NOT NULL,
+                reviewed_by VARCHAR(36),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                reviewed_at TIMESTAMP
+            )
+            """,
             "ALTER TABLE rooms ADD COLUMN max_members INTEGER DEFAULT 20",
             "ALTER TABLE rooms ADD COLUMN require_admission_approval BOOLEAN DEFAULT 0",
             "ALTER TABLE room_members ADD COLUMN is_kicked BOOLEAN DEFAULT 0",
@@ -43,6 +55,18 @@ async def init_db():
         ]
         if "postgresql" in settings.normalized_database_url or "postgres" in settings.normalized_database_url:
             migration_statements = [
+                """
+                CREATE TABLE IF NOT EXISTS waiting_room_requests (
+                    id VARCHAR(36) PRIMARY KEY,
+                    room_id VARCHAR(36) NOT NULL,
+                    user_id VARCHAR(36) NOT NULL,
+                    request_type VARCHAR(20) DEFAULT 'join' NOT NULL,
+                    status VARCHAR(20) DEFAULT 'pending' NOT NULL,
+                    reviewed_by VARCHAR(36),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                    reviewed_at TIMESTAMP WITH TIME ZONE
+                )
+                """,
                 "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS max_members INTEGER DEFAULT 20",
                 "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS require_admission_approval BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE room_members ADD COLUMN IF NOT EXISTS is_kicked BOOLEAN DEFAULT FALSE",
