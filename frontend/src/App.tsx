@@ -12,7 +12,7 @@ import { DocumentPreviewModal } from './components/DocumentPreviewModal';
 import { ResizeDivider } from './components/ResizeDivider';
 import { api } from './lib/api';
 import { VaultWebSocket, ConnectionState, RoomUser } from './lib/websocket';
-import { encryptEnvelope, decryptEnvelope, deriveRoomKey } from './lib/crypto';
+import { encryptEnvelope, decryptEnvelope, deriveRoomKey, clearDerivedKeyCache } from './lib/crypto';
 import { secureStorage } from './lib/secureStorage';
 import { upsertSource, dedupeSources, removeSourceById } from './lib/sourceList';
 
@@ -188,8 +188,10 @@ export function App() {
     if (!savedPass) return;
 
     try {
-      const roomData = await api.getRoom(savedCode);
-      const { key } = await deriveRoomKey(savedPass, savedCode);
+      const [roomData, { key }] = await Promise.all([
+        api.getRoom(savedCode),
+        deriveRoomKey(savedPass, savedCode)
+      ]);
       await handleRoomJoined(roomData, key, savedPass);
     } catch (err: any) {
       if (err.status === 404 || err.status === 403 || (err.message && (err.message.includes('404') || err.message.includes('403')))) {
@@ -1185,7 +1187,7 @@ export function App() {
         </div>
       ) : (
         /* Room Join / Lobby Screen */
-        <div className="relative z-10 flex-1 flex flex-col min-h-0 overflow-y-auto">
+        <div className="relative z-10 flex-1 flex flex-col min-h-0 overflow-hidden">
           <RoomModal
             isOpen={true}
             user={user}

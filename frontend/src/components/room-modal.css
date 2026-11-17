@@ -14,11 +14,10 @@
   --vr-surface: rgba(12, 22, 25, 0.88);
   --vr-input-bg: rgba(6, 11, 15, 0.65);
 
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  height: 100vh;
-  height: 100dvh;
+  position: relative;
+  z-index: 20;
+  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   overflow-y: auto;
   overflow-x: hidden;
@@ -27,13 +26,16 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 0 clamp(16px, 3.5vw, 40px) clamp(40px, 6vh, 80px);
+  padding: 0 clamp(16px, 3.5vw, 40px) clamp(24px, 4vh, 48px);
   background: transparent;
   color: #edf4f5;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   user-select: none;
   pointer-events: auto;
   box-sizing: border-box;
+  animation: vr-room-page-reveal 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .vr-room input,
@@ -105,15 +107,15 @@
   width: 100%;
   max-width: 1200px;
   flex-shrink: 0;
-  min-height: clamp(56px, 7vh, 72px);
-  padding: clamp(14px, 2vh, 22px) clamp(10px, 2vw, 24px);
+  min-height: clamp(50px, 6vh, 62px);
+  padding: clamp(10px, 1.6vh, 16px) clamp(10px, 2vw, 24px);
   display: flex;
   align-items: center;
   justify-content: space-between;
   z-index: 30;
   pointer-events: auto;
   box-sizing: border-box;
-  margin-bottom: clamp(10px, 2vh, 20px);
+  margin-bottom: clamp(6px, 1.4vh, 12px);
 }
 
 .vr-room__brand {
@@ -349,23 +351,22 @@
    Main Center Card
    ========================================================================== */
 .vr-room__card {
-  width: min(100%, 570px);
+  width: min(100%, 560px);
   position: relative;
   isolation: isolate;
   overflow: visible;
   border: 1px solid rgba(33, 212, 229, 0.28);
-  border-radius: 24px;
-  background: linear-gradient(150deg, rgba(14, 25, 29, 0.88), rgba(8, 15, 18, 0.92));
+  border-radius: 20px;
+  background: linear-gradient(150deg, rgba(14, 25, 29, 0.92), rgba(8, 15, 18, 0.96));
   box-shadow:
-    0 28px 90px rgba(0, 0, 0, 0.65),
+    0 24px 70px rgba(0, 0, 0, 0.6),
     0 0 1px rgba(33, 212, 229, 0.35) inset,
     0 0 25px rgba(33, 212, 229, 0.08);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  padding: clamp(22px, 3.5vw, 36px);
-  animation: vr-room-rise 550ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  margin: auto auto;
-  margin-bottom: clamp(32px, 5vh, 60px);
+  padding: clamp(16px, 2.6vw, 24px) clamp(18px, 3vw, 28px);
+  animation: vr-room-rise 450ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  margin: 0 auto clamp(24px, 4vh, 48px);
   flex-shrink: 0;
   z-index: 10;
   pointer-events: auto;
@@ -396,18 +397,18 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 
 .vr-room__secure-mark,
 .vr-room__card-index {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   color: #90a2aa;
   font-size: 9px;
-  font-weight: 750;
-  letter-spacing: 0.15em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -429,34 +430,34 @@
 }
 
 .vr-room__heading {
-  margin-bottom: 22px;
+  margin-bottom: 14px;
   animation: vr-room-content-in 240ms ease both;
 }
 
 .vr-room__heading-kicker {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   color: var(--vr-teal);
   font-size: 9px;
-  font-weight: 750;
-  letter-spacing: 0.16em;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .vr-room__heading-title {
   margin: 0;
   color: #edf4f5;
-  font-size: clamp(23px, 3.2vw, 29px);
-  font-weight: 580;
-  letter-spacing: -0.04em;
+  font-size: clamp(20px, 2.6vw, 25px);
+  font-weight: 650;
+  letter-spacing: -0.025em;
   line-height: 1.2;
 }
 
 .vr-room__heading-subtitle {
   display: block;
-  margin-top: 7px;
+  margin-top: 4px;
   color: var(--vr-muted);
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 11.5px;
+  line-height: 1.5;
 }
 
 /* Segmented Tab Selector */
@@ -465,15 +466,15 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
-  padding: 4px;
-  border-radius: 12px;
+  padding: 3px;
+  border-radius: 11px;
   background: rgba(6, 11, 15, 0.72);
   border: 1px solid rgba(185, 210, 220, 0.12);
-  margin-bottom: 24px;
+  margin-bottom: 15px;
 }
 
 .vr-room__tab {
-  min-height: 40px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -537,13 +538,13 @@
 .vr-room__form {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 13px;
 }
 
 .vr-room__field {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
 }
 
 .vr-room__label-row {
@@ -575,13 +576,13 @@
 
 /* Input & Select Wrappers */
 .vr-room__input-wrap {
-  min-height: 46px;
+  min-height: 40px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 13px;
+  gap: 9px;
+  padding: 0 12px;
   border: 1px solid rgba(166, 193, 201, 0.16);
-  border-radius: 10px;
+  border-radius: 9px;
   background: var(--vr-input-bg);
   color: #71868e;
   transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
@@ -598,7 +599,7 @@
 .vr-room__input-wrap input {
   width: 100%;
   min-width: 0;
-  padding: 12px 0;
+  padding: 9px 0;
   border: 0;
   outline: 0;
   background: transparent;
@@ -628,16 +629,16 @@
 
 /* Custom Select Wrapper */
 .vr-room__select-wrap {
-  min-height: 46px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   position: relative;
   border: 1px solid rgba(166, 193, 201, 0.16);
-  border-radius: 10px;
+  border-radius: 9px;
   background: var(--vr-input-bg);
   color: #71868e;
   transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
-  padding-left: 12px;
+  padding-left: 10px;
 }
 
 .vr-room__select-wrap:focus-within {
@@ -656,16 +657,19 @@
 
 .vr-room__select {
   width: 100%;
-  height: 44px;
+  height: 38px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   appearance: none;
   background: transparent;
   border: 0;
   outline: 0;
   color: #edf4f5;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
   cursor: pointer;
-  padding-right: 32px;
+  padding-right: 30px;
 }
 
 .vr-room__select option {
@@ -691,7 +695,7 @@
 .vr-room__grid-two {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 10px;
 }
 
 /* ==========================================================================
@@ -804,28 +808,28 @@
 
 /* Submit Action Button */
 .vr-room__submit {
-  min-height: 48px;
+  min-height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  margin-top: 6px;
+  gap: 8px;
+  margin-top: 4px;
   border: 1px solid rgba(33, 212, 229, 0.45);
   border-radius: 10px;
   background: linear-gradient(105deg, #10bfa5, #21d4e5);
-  box-shadow: 0 0 16px rgba(33, 212, 229, 0.32), 0 1px rgba(255, 255, 255, 0.3) inset;
+  box-shadow: 0 0 16px rgba(33, 212, 229, 0.28), 0 1px rgba(255, 255, 255, 0.3) inset;
   color: #05090b;
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
-  font-weight: 760;
+  font-weight: 700;
   transition: transform 180ms ease, filter 180ms ease, box-shadow 180ms ease;
 }
 
 .vr-room__submit:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.06);
-  box-shadow: 0 12px 30px rgba(28, 159, 159, 0.25), 0 1px rgba(255, 255, 255, 0.4) inset;
+  box-shadow: 0 10px 24px rgba(28, 159, 159, 0.24), 0 1px rgba(255, 255, 255, 0.4) inset;
 }
 
 .vr-room__submit:active:not(:disabled) {
@@ -853,8 +857,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 22px;
-  padding-top: 18px;
+  margin-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid var(--vr-line);
   color: #6f8288;
   font-size: 9px;
@@ -883,6 +887,11 @@
 /* ==========================================================================
    Keyframes & Animations
    ========================================================================== */
+@keyframes vr-room-page-reveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @keyframes vr-room-rise {
   from { opacity: 0; transform: translateY(12px) scale(0.99); }
   to { opacity: 1; transform: translateY(0) scale(1); }

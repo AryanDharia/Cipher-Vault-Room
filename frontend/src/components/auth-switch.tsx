@@ -64,8 +64,8 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
   return (
     <main className="vr-auth">
       {/* Background with user-provided artwork & dark overlay */}
-      <div className="cyber-bg-container pointer-events-none" aria-hidden="true">
-        <div className="cyber-bg-overlay pointer-events-none" />
+      <div className="cyber-bg-container" aria-hidden="true">
+        <div className="cyber-bg-overlay" />
       </div>
 
       <div className="vr-auth__ambient" aria-hidden="true">
@@ -83,47 +83,47 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
             </div>
             <div className="vr-auth__brand-text">
               <span className="vr-auth__brand-name">VAULT<span>ROOM</span></span>
-              <span className="vr-auth__brand-badge">AES-256 E2EE</span>
+              <span className="vr-auth__brand-badge">End-to-end encrypted</span>
             </div>
           </div>
 
           <div className="vr-auth__story-copy">
             <p className="vr-auth__kicker">
-              <span className="vr-auth__kicker-dot" /> ZERO-KNOWLEDGE PROTOCOL
+              <span className="vr-auth__kicker-dot" /> PRIVATE WORKSPACE
             </p>
-            <h1>Confidential<br /><em>Workspace.</em></h1>
+            <h1>Your work. Your space.<br /><em>Securely connected.</em></h1>
             <p className="vr-auth__lede">
-              Next-generation cryptographic collaboration. Your documents and secret vaults are client-side encrypted before transmission.
+              A private workspace where your team can write, share and collaborate on documents securely.
             </p>
           </div>
 
-          <ul className="vr-auth__highlights" aria-label="VaultRoom security guarantees">
+          <ul className="vr-auth__highlights" aria-label="VaultRoom features">
             <li>
               <span><Check size={14} aria-hidden="true" /></span>
               <div>
-                <strong>Zero-Knowledge Encryption</strong>
-                <p>Client-derived keys never leave your browser device.</p>
+                <strong>Private by design</strong>
+                <p>Your documents are protected with client-side encryption.</p>
               </div>
             </li>
             <li>
               <span><Check size={14} aria-hidden="true" /></span>
               <div>
-                <strong>Quorum-Protected Vaults</strong>
-                <p>Multi-party consensus required for sensitive actions.</p>
+                <strong>Work together</strong>
+                <p>Collaborate with your team in real time.</p>
               </div>
             </li>
             <li>
               <span><Check size={14} aria-hidden="true" /></span>
               <div>
-                <strong>Real-Time Encrypted Yjs</strong>
-                <p>Collaborative TipTap editor with automated state synchronization.</p>
+                <strong>Stay in control</strong>
+                <p>Manage room access and approvals.</p>
               </div>
             </li>
           </ul>
 
           <div className="vr-auth__story-foot">
             <ShieldCheck size={15} aria-hidden="true" className="text-[#10bfa5]" />
-            <span>AUTHENTICATED CRYPTOGRAPHIC ENCLAVE</span>
+            <span>Client-side encryption · Zero trust architecture</span>
           </div>
         </aside>
 
@@ -134,14 +134,14 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
               <LockKeyhole size={14} aria-hidden="true" /> SECURE SESSION
             </span>
             <span className="vr-auth__panel-index">
-              <Cpu size={13} className="inline mr-1 text-[#10bfa5]" /> ENCLAVE V2.4
+              <Cpu size={13} className="inline mr-1 text-[#10bfa5]" /> VAULTROOM V2
             </span>
           </div>
 
           <div className="vr-auth__heading" key={mode}>
-            <p>{isSignUp ? 'REGISTER CREDENTIALS' : 'VERIFY IDENTITY'}</p>
-            <h2 id="vr-auth-heading">{isSignUp ? 'Create Vault Account' : 'Welcome to VaultRoom'}</h2>
-            <span>{isSignUp ? 'Initialize your cryptographic credentials.' : 'Authenticate to unlock your encrypted workspaces.'}</span>
+            <p>{isSignUp ? 'REGISTER' : 'SIGN IN'}</p>
+            <h2 id="vr-auth-heading">{isSignUp ? 'Create your account' : 'Welcome to VaultRoom'}</h2>
+            <span>{isSignUp ? 'Set up your credentials to begin using VaultRoom.' : 'Enter your credentials to access your secure rooms.'}</span>
           </div>
 
           {notification && (
@@ -171,7 +171,7 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
               disabled={loading}
               onClick={() => switchMode('signup')}
             >
-              Sign Up
+              Create Account
             </button>
             <span className={`vr-auth__tab-indicator${isSignUp ? ' is-right' : ''}`} aria-hidden="true" />
           </div>
@@ -244,11 +244,11 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
                 {loading ? (
                   <>
                     <span className="vr-auth__spinner" aria-hidden="true" />
-                    <span aria-live="polite">{isSignUp ? 'Creating account…' : 'Authenticating…'}</span>
+                    <span aria-live="polite">{isSignUp ? 'Creating account…' : 'Signing in…'}</span>
                   </>
                 ) : (
                   <>
-                    <span>{isSignUp ? 'Create Encrypted Account' : 'Authenticate & Unlock'}</span>
+                    <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
                     <ArrowRight size={17} aria-hidden="true" />
                   </>
                 )}
@@ -257,8 +257,8 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
           </div>
 
           <footer className="vr-auth__footer">
-            <span><Lock size={12} aria-hidden="true" /> TLS 1.3 · End-to-End Encrypted</span>
-            <span>VAULTROOM <b>·</b> SECURE ENCLAVE</span>
+            <span><Lock size={12} aria-hidden="true" /> End-to-end encrypted</span>
+            <span>VAULTROOM</span>
           </footer>
         </section>
       </section>

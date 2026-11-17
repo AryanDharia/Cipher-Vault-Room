@@ -63,9 +63,25 @@ export async function generateDocumentKey(): Promise<CryptoKey> {
 }
 
 /**
+ * In-memory session cache for PBKDF2 derived keys to avoid redundant 100,000-iteration computations.
+ * Keys are kept strictly in memory for the active browser session and never written to storage.
+ */
+const derivedKeyCache = new Map<string, { key: CryptoKey; saltHex: string }>();
+
+export function clearDerivedKeyCache(): void {
+  derivedKeyCache.clear();
+}
+
+/**
  * Derive an AES-GCM 256-bit key from a Room Passphrase and Room Code (PBKDF2)
  */
 export async function deriveRoomKey(passphrase: string, roomCode: string): Promise<{ key: CryptoKey; saltHex: string }> {
+  const cacheKey = `${roomCode.toUpperCase()}:${passphrase}`;
+  const cached = derivedKeyCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const enc = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.importKey(
     'raw',
@@ -89,7 +105,13 @@ export async function deriveRoomKey(passphrase: string, roomCode: string): Promi
     ['encrypt', 'decrypt']
   );
 
-  return { key, saltHex: bufferToHex(saltBytes.buffer) };
+  const result = { key, saltHex: bufferToHex(saltBytes.buffer) };
+  if (derivedKeyCache.size >= 30) {
+    const oldestKey = derivedKeyCache.keys().next().value;
+    if (oldestKey) derivedKeyCache.delete(oldestKey);
+  }
+  derivedKeyCache.set(cacheKey, result);
+  return result;
 }
 
 /**

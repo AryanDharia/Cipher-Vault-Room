@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,17 +43,19 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
             detail="Username must be at least 3 characters"
         )
 
-    # Enforce case-insensitive uniqueness check
-    existing = await db.execute(
-        select(User).where(func.lower(User.username) == clean_username.lower())
+    # Concurrently execute case-insensitive user check and CPU-bound Argon2id hashing
+    check_task = db.execute(
+        select(User.id).where(func.lower(User.username) == clean_username.lower()).limit(1)
     )
-    if existing.scalar_one_or_none():
+    hash_task = asyncio.to_thread(hash_password, req.password)
+
+    existing_res, hashed = await asyncio.gather(check_task, hash_task)
+    if existing_res.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username is already registered. Please choose another."
         )
 
-    hashed = hash_password(req.password)
     user = User(
         username=clean_username,
         password_hash=hashed,
@@ -77,10 +80,18 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     clean_username = req.username.strip()
     result = await db.execute(
-        select(User).where(func.lower(User.username) == clean_username.lower())
+        select(User).where(func.lower(User.username) == clean_username.lower()).limit(1)
     )
     user = result.scalar_one_or_none()
-    if not user or not verify_password(req.password, user.password_hash):
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password"
+        )
+
+    # Offload Argon2id password verification to worker thread to prevent event-loop blocking
+    is_valid = await asyncio.to_thread(verify_password, req.password, user.password_hash)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password"
@@ -116,7 +127,8 @@ async def delete_account(
     Permanently delete the authenticated user's account, owned rooms,
     memberships, and credentials. Requires password re-authentication.
     """
-    if not verify_password(req.password, user.password_hash):
+    is_valid = await asyncio.to_thread(verify_password, req.password, user.password_hash)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect password. Account deletion aborted."

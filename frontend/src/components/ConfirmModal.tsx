@@ -28,8 +28,8 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
               <LogOut className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-mono font-bold text-slate-100">Sign Out Session</h2>
-              <p className="text-[11px] font-mono text-slate-400">VaultRoom Security Protocol</p>
+              <h2 className="text-base font-semibold text-slate-100 tracking-tight font-sans">Sign Out Session</h2>
+              <p className="text-[11px] text-slate-400 font-sans">VaultRoom Security Protocol</p>
             </div>
           </div>
           <button
@@ -45,7 +45,7 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
         </p>
 
         {hasUnsavedChanges && (
-          <div className="mb-4 p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/35 flex items-start space-x-3 text-xs text-amber-300/95 font-mono">
+          <div className="mb-4 p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/35 flex items-start space-x-3 text-xs text-amber-300/95 font-sans">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <span>Warning: You have uncommitted document changes. Signing out now will discard unsaved state.</span>
           </div>
@@ -55,14 +55,14 @@ export const SignOutModal: React.FC<SignOutModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-mono text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
+            className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-medium font-sans text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-xs font-mono font-bold text-slate-950 transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)]"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-xs font-semibold font-sans text-slate-950 transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)]"
           >
             Sign Out
           </button>
@@ -115,8 +115,8 @@ export const DeleteRoomModal: React.FC<DeleteRoomModalProps> = ({
               <Trash2 className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-mono font-bold text-red-200">Delete Room Permanently</h2>
-              <p className="text-[11px] font-mono text-red-400/80">Irreversible Host Action</p>
+              <h2 className="text-base font-semibold text-red-200 tracking-tight font-sans">Delete Room Permanently</h2>
+              <p className="text-[11px] text-red-400/80 font-sans">Irreversible Host Action</p>
             </div>
           </div>
           <button
@@ -135,8 +135,8 @@ export const DeleteRoomModal: React.FC<DeleteRoomModalProps> = ({
               {roomCode}
             </span>.
           </p>
-          <div className="p-3.5 rounded-xl bg-red-950/30 border border-red-500/25 text-red-300/90 text-[11px] font-mono leading-relaxed space-y-1">
-            <span className="font-bold text-red-300 block mb-1">CONSEQUENCES:</span>
+          <div className="p-3.5 rounded-xl bg-red-950/30 border border-red-500/25 text-red-300/90 text-[11px] font-sans leading-relaxed space-y-1">
+            <span className="font-semibold text-red-300 block mb-1">CONSEQUENCES:</span>
             <div>• All saved zero-knowledge encrypted documents will be destroyed.</div>
             <div>• Secrets, sources, approvals, and activity history will be erased.</div>
             <div>• All connected room members will be immediately disconnected.</div>
@@ -144,7 +144,7 @@ export const DeleteRoomModal: React.FC<DeleteRoomModalProps> = ({
         </div>
 
         {error && (
-          <div className="mb-4 p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-300 font-mono">
+          <div className="mb-4 p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-300 font-sans">
             {error}
           </div>
         )}
@@ -154,7 +154,7 @@ export const DeleteRoomModal: React.FC<DeleteRoomModalProps> = ({
             type="button"
             disabled={loading}
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-mono text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
+            className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-medium font-sans text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
           >
             Cancel
           </button>
@@ -162,7 +162,7 @@ export const DeleteRoomModal: React.FC<DeleteRoomModalProps> = ({
             type="button"
             disabled={loading}
             onClick={handleConfirm}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 disabled:opacity-50 text-xs font-mono font-bold text-white transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)] flex items-center space-x-1.5"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 disabled:opacity-50 text-xs font-semibold font-sans text-white transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)] flex items-center space-x-1.5"
           >
             {loading ? (
               <span>Destroying Room...</span>
@@ -228,8 +228,8 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-mono font-bold text-red-200">Delete Account Permanently</h2>
-              <p className="text-[11px] font-mono text-red-400/80">Permanent Cryptographic Erasure</p>
+              <h2 className="text-base font-semibold text-red-200 tracking-tight font-sans">Delete Account Permanently</h2>
+              <p className="text-[11px] text-red-400/80 font-sans">Permanent Cryptographic Erasure</p>
             </div>
           </div>
           <button
@@ -242,12 +242,12 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
         </div>
 
         <div className="mb-4 text-xs text-slate-300 space-y-2.5">
-          <p className="leading-relaxed">
+          <p className="leading-relaxed font-sans">
             You are about to permanently delete the user account for{' '}
             <span className="font-bold text-white font-mono">{username}</span>.
           </p>
-          <div className="p-3.5 rounded-xl bg-red-950/30 border border-red-500/25 text-red-300/90 text-[11px] font-mono leading-relaxed space-y-1">
-            <span className="font-bold text-red-300 block mb-1">DATA ERASURE NOTICE:</span>
+          <div className="p-3.5 rounded-xl bg-red-950/30 border border-red-500/25 text-red-300/90 text-[11px] font-sans leading-relaxed space-y-1">
+            <span className="font-semibold text-red-300 block mb-1">DATA ERASURE NOTICE:</span>
             <div>• Your user credentials and account profile will be permanently removed.</div>
             <div>• All rooms created by you and their stored documents will be deleted.</div>
             <div>• This action is immediate, final, and cannot be undone.</div>
@@ -255,14 +255,14 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
         </div>
 
         {error && (
-          <div className="mb-4 p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-300 font-mono">
+          <div className="mb-4 p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-300 font-sans">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-[11px] font-mono text-slate-400 block mb-1.5">
+            <label className="text-[11px] font-sans text-slate-400 block mb-1.5">
               Enter your password to authorize deletion:
             </label>
             <div className="relative">
@@ -274,7 +274,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                 placeholder="Account password..."
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[#05090B] border border-red-500/25 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/30 font-mono transition-all placeholder:text-slate-600"
+                className="w-full bg-[#05090B] border border-red-500/25 rounded-xl pl-9 pr-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/30 font-sans transition-all placeholder:text-slate-600"
               />
             </div>
           </div>
@@ -284,14 +284,14 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
               type="button"
               disabled={loading}
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-mono text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
+              className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-medium font-sans text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 disabled:opacity-50 text-xs font-mono font-bold text-white transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)] flex items-center space-x-1.5"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 disabled:opacity-50 text-xs font-semibold font-sans text-white transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)] flex items-center space-x-1.5"
             >
               {loading ? (
                 <span>Erasing Account...</span>
@@ -356,8 +356,8 @@ export const KickMemberModal: React.FC<KickMemberModalProps> = ({
               <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-mono font-bold text-slate-100">Revoke Member Access</h2>
-              <p className="text-[11px] font-mono text-amber-400/80">Room Access Policy</p>
+              <h2 className="text-base font-semibold text-slate-100 tracking-tight font-sans">Revoke Member Access</h2>
+              <p className="text-[11px] text-amber-400/80 font-sans">Room Access Policy</p>
             </div>
           </div>
           <button
@@ -373,7 +373,7 @@ export const KickMemberModal: React.FC<KickMemberModalProps> = ({
           Are you sure you want to remove <span className="font-bold text-amber-300 font-mono">{targetUsername}</span> from room <span className="font-mono text-[#21D4E5] font-bold">{roomCode}</span>?
         </p>
 
-        <div className="p-3.5 rounded-xl bg-amber-950/25 border border-amber-500/25 text-amber-200/90 text-xs font-mono mb-4 space-y-1">
+        <div className="p-3.5 rounded-xl bg-amber-950/25 border border-amber-500/25 text-amber-200/90 text-xs font-sans mb-4 space-y-1">
           <div>• The user will be immediately disconnected from the WebSocket session.</div>
           <div>• Active presence, live cursors, and room access will be revoked.</div>
           <div>• They cannot rejoin using stale authentication credentials.</div>
@@ -381,14 +381,14 @@ export const KickMemberModal: React.FC<KickMemberModalProps> = ({
         </div>
 
         {error && (
-          <div className="mb-4 p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-300 font-mono">
+          <div className="mb-4 p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-300 font-sans">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-[11px] font-mono text-slate-400 block mb-1.5">
+            <label className="text-[11px] font-sans text-slate-400 block mb-1.5">
               Reason for Removal (Visible to Member)
             </label>
             <input
@@ -396,7 +396,7 @@ export const KickMemberModal: React.FC<KickMemberModalProps> = ({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="e.g. Session concluded / Policy violation"
-              className="w-full bg-[#05090B] border border-[rgba(100,220,205,0.18)] rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 font-mono transition-all"
+              className="w-full bg-[#05090B] border border-[rgba(100,220,205,0.18)] rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 font-sans transition-all"
             />
           </div>
 
@@ -405,14 +405,14 @@ export const KickMemberModal: React.FC<KickMemberModalProps> = ({
               type="button"
               disabled={loading}
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-mono text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
+              className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-medium font-sans text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 disabled:opacity-50 text-xs font-mono font-bold text-white transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)] flex items-center space-x-1.5"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 disabled:opacity-50 text-xs font-semibold font-sans text-white transition-all shadow-[0_0_15px_rgba(239,68,68,0.3)] flex items-center space-x-1.5"
             >
               {loading ? <span>Revoking...</span> : <span>Confirm Removal</span>}
             </button>
@@ -480,11 +480,11 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               <Settings className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-mono font-bold text-slate-100 flex items-center space-x-2">
+              <h2 className="text-base font-semibold text-slate-100 flex items-center space-x-2 font-sans tracking-tight">
                 <span>Room Settings:</span>
-                <span className="text-[#21D4E5]">{roomCode}</span>
+                <span className="text-[#21D4E5] font-mono">{roomCode}</span>
               </h2>
-              <p className="text-[11px] font-mono text-slate-400">Vault Configuration & Capacity</p>
+              <p className="text-[11px] text-slate-400 font-sans">Vault Configuration & Capacity</p>
             </div>
           </div>
           <button
@@ -497,31 +497,31 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
         </div>
 
         {error && (
-          <div className="mb-4 p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-300 font-mono">
+          <div className="mb-4 p-2.5 rounded-xl bg-red-950/60 border border-red-500/40 text-xs text-red-300 font-sans">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-[11px] font-mono text-slate-400 block mb-1.5">Room Name</label>
+            <label className="text-[11px] font-sans text-slate-400 block mb-1.5">Room Name</label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-[#05090B] border border-[rgba(100,220,205,0.18)] rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-[#21D4E5] focus:ring-1 focus:ring-[#21D4E5]/30 font-mono transition-all"
+              className="w-full bg-[#05090B] border border-[rgba(100,220,205,0.18)] rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-[#21D4E5] focus:ring-1 focus:ring-[#21D4E5]/30 font-sans transition-all"
             />
           </div>
 
           <div>
-            <label className="text-[11px] font-mono text-slate-400 block mb-1.5">
+            <label className="text-[11px] font-sans text-slate-400 block mb-1.5">
               Maximum Member Capacity
             </label>
             <select
               value={maxMembers}
               onChange={(e) => setMaxMembers(Number(e.target.value))}
-              className="w-full bg-[#05090B] border border-[rgba(100,220,205,0.18)] rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-[#21D4E5] focus:ring-1 focus:ring-[#21D4E5]/30 font-mono transition-all"
+              className="w-full bg-[#05090B] border border-[rgba(100,220,205,0.18)] rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-[#21D4E5] focus:ring-1 focus:ring-[#21D4E5]/30 font-sans transition-all"
             >
               <option value={3}>3 Members (Strict Quorum)</option>
               <option value={5}>5 Members (Team Vault)</option>
@@ -530,7 +530,7 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               <option value={50}>50 Members (Departmental Vault)</option>
               <option value={100}>100 Members (Organization Wide)</option>
             </select>
-            <p className="text-[10px] text-slate-500 mt-1.5 font-mono">Capacity adjustments propagate immediately across connected peers.</p>
+            <p className="text-[10px] text-slate-500 mt-1.5 font-sans">Capacity adjustments propagate immediately across connected peers.</p>
           </div>
 
           <div className="pt-1">
@@ -542,10 +542,10 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
                 className="mt-0.5 rounded border-slate-700 text-[#10BFA5] focus:ring-[#21D4E5] focus:ring-offset-0 bg-[#070D10]"
               />
               <div className="text-left">
-                <span className="text-xs font-mono font-semibold text-slate-200 block">
+                <span className="text-xs font-semibold text-slate-200 block font-sans">
                   Require Host Approval (Waiting Room)
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+                <span className="text-[10px] text-slate-400 font-sans block mt-0.5">
                   Hold new participants in a waiting room until approved by the room host.
                 </span>
               </div>
@@ -557,14 +557,14 @@ export const RoomSettingsModal: React.FC<RoomSettingsModalProps> = ({
               type="button"
               disabled={loading}
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-mono text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
+              className="px-4 py-2 rounded-xl border border-[rgba(100,220,205,0.16)] bg-[#0F171B] text-xs font-medium font-sans text-slate-300 hover:bg-[#152329] hover:text-white transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#10BFA5] to-[#21D4E5] hover:opacity-90 text-xs font-mono font-bold text-slate-950 transition-all shadow-[0_0_15px_rgba(33,212,229,0.3)]"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#10BFA5] to-[#21D4E5] hover:opacity-90 text-xs font-semibold font-sans text-slate-950 transition-all shadow-[0_0_15px_rgba(33,212,229,0.3)]"
             >
               {loading ? <span>Saving...</span> : <span>Save Settings</span>}
             </button>

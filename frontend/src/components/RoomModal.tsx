@@ -280,8 +280,11 @@ export const RoomModal: React.FC<RoomModalProps> = ({
           throw new Error('Room code must be exactly 6 characters');
         }
 
-        const res = await api.joinRoom({ code: cleanCode, role: 'editor' });
-        const { key } = await deriveRoomKey(passphrase.trim(), cleanCode);
+        // Concurrently run backend admission check and client-side PBKDF2 key derivation
+        const [res, { key }] = await Promise.all([
+          api.joinRoom({ code: cleanCode, role: 'editor' }),
+          deriveRoomKey(passphrase.trim(), cleanCode)
+        ]);
 
         await onRoomJoined(res, key, passphrase.trim());
       }
@@ -460,15 +463,15 @@ export const RoomModal: React.FC<RoomModalProps> = ({
         {/* Dynamic Heading based on mode */}
         <div className="vr-room__heading" key={mode}>
           <p className="vr-room__heading-kicker">
-            {isCreate ? 'INITIALIZE SECURE VAULT' : 'VERIFIED PARTICIPATION'}
+            {isCreate ? 'NEW WORKSPACE' : 'ROOM ACCESS'}
           </p>
           <h2 id="vr-room-heading" className="vr-room__heading-title">
             {isCreate ? 'Create New Room' : 'Join Existing Room'}
           </h2>
           <span className="vr-room__heading-subtitle">
             {isCreate
-              ? 'Deploy a zero-knowledge encrypted room with custom host consensus.'
-              : 'Enter your 6-character room code and client-side encryption passphrase.'}
+              ? 'Set up a private, client-side encrypted room for your team.'
+              : 'Enter your room code and passphrase to join.'}
           </span>
         </div>
 
