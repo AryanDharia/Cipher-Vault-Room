@@ -323,10 +323,10 @@ export const RoomModal: React.FC<RoomModalProps> = ({
   useEffect(() => {
     const selects = document.querySelectorAll<HTMLSelectElement>('.vr-room select, .vr-room__select');
     selects.forEach((select) => {
-      select.style.setProperty('-webkit-appearance', 'none', 'important');
-      select.style.setProperty('-moz-appearance', 'none', 'important');
-      select.style.setProperty('appearance', 'none', 'important');
-      select.style.setProperty('background-image', 'none', 'important');
+      select.setAttribute(
+        'style',
+        '-webkit-appearance: none !important; -moz-appearance: none !important; appearance: none !important; background: transparent !important; background-image: none !important;'
+      );
     });
   }, [mode, showAdvancedSecurity]);
 
