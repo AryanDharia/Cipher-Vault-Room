@@ -16,7 +16,9 @@
   width: 100%;
   position: relative;
   isolation: isolate;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   display: grid;
   place-items: center;
   padding: clamp(16px, 3.5vw, 44px);
@@ -539,41 +541,93 @@
   gap: 5px;
 }
 
-/* Responsive adjustments */
-@media (max-width: 860px) {
+/* Responsive Layout Breakpoints */
+@media (max-width: 1024px) {
+  .vr-auth {
+    padding: clamp(16px, 3vw, 32px);
+  }
+
   .vr-auth__layout {
     grid-template-columns: 1fr;
+    width: min(100%, 460px);
+    max-width: 460px;
     min-height: auto;
-    max-width: 540px;
+    margin: 0 auto;
+    border-radius: 20px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 1px rgba(33, 212, 229, 0.25) inset;
   }
+
+  /* Automatically hide the entire left promotional/branding panel on half-screen, tablet, and mobile */
   .vr-auth__story {
-    display: flex;
-    padding: 24px 24px 16px;
-    border-right: 0;
-    border-bottom: 1px solid var(--vr-border);
+    display: none !important;
   }
-  .vr-auth__story-copy {
-    margin-top: 14px;
-  }
-  .vr-auth__story-copy h1 {
-    font-size: 1.45rem;
-    line-height: 1.25;
-  }
-  .vr-auth__lede {
-    font-size: 0.88rem;
-    line-height: 1.45;
-  }
-  .vr-auth__highlights {
-    margin: 14px 0 0;
-    gap: 10px;
-  }
-  .vr-auth__highlights li {
-    font-size: 0.85rem;
-  }
-  .vr-auth__story-foot {
-    display: none;
-  }
+
+  /* Display ONLY the authentication panel, centered and comfortably padded */
   .vr-auth__panel {
-    padding: 24px 20px 28px;
+    width: 100%;
+    padding: clamp(26px, 4.5vw, 38px);
+    background: var(--vr-card);
+  }
+}
+
+@media (max-width: 480px) {
+  .vr-auth {
+    padding: 16px 12px;
+  }
+
+  .vr-auth__layout {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 18px;
+  }
+
+  .vr-auth__panel {
+    padding: 22px 16px 24px;
+  }
+
+  .vr-auth__panel-top {
+    margin-bottom: 18px;
+  }
+
+  .vr-auth__heading h2 {
+    font-size: 1.35rem;
+    margin-bottom: 4px;
+  }
+
+  .vr-auth__heading span {
+    font-size: 0.8rem;
+  }
+
+  .vr-auth__tabs {
+    margin-top: 18px;
+  }
+
+  .vr-auth__tabs button {
+    padding: 7px 10px;
+    font-size: 0.82rem;
+  }
+
+  .vr-auth__form-wrap {
+    margin-top: 16px;
+  }
+
+  .vr-auth__field {
+    margin-bottom: 14px;
+  }
+
+  .vr-auth__input-wrap input {
+    height: 42px;
+    font-size: 0.88rem;
+    padding: 0 38px 0 36px;
+  }
+
+  .vr-auth__submit {
+    height: 44px;
+    font-size: 0.88rem;
+  }
+
+  .vr-auth__footer {
+    padding-top: 18px;
+    font-size: 9px;
   }
 }
