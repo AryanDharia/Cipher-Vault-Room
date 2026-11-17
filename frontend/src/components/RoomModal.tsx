@@ -21,7 +21,8 @@ import {
   XCircle,
   Eye,
   EyeOff,
-  Cpu
+  Cpu,
+  Clipboard
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { deriveRoomKey } from '../lib/crypto';
@@ -520,8 +521,9 @@ export const RoomModal: React.FC<RoomModalProps> = ({
           </button>
         </div>
 
-        {/* Form */}
+        {/* Form with Internal Scrolling & Sticky Actions */}
         <form onSubmit={handleSubmit} className="vr-room__form">
+          <div className="vr-room__form-scroll">
             {/* Error Alert Banner */}
             {error && !isKickedError && !isAdmissionPending && (
               <div className="vr-room__error" role="alert">
@@ -910,6 +912,21 @@ export const RoomModal: React.FC<RoomModalProps> = ({
                   autoCapitalize="characters"
                   spellCheck={false}
                 />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const text = await navigator.clipboard.readText();
+                      if (text) setRoomCode(text.trim().toUpperCase().slice(0, 6));
+                    } catch {}
+                  }}
+                  className="vr-room__paste-btn"
+                  title="Paste from clipboard"
+                  disabled={loading}
+                >
+                  <Clipboard size={11} aria-hidden="true" />
+                  <span>Paste</span>
+                </button>
               </div>
               <span className="vr-room__field-hint">
                 Enter the exact 6-character room code provided by the room host.
@@ -952,36 +969,60 @@ export const RoomModal: React.FC<RoomModalProps> = ({
             </span>
           </div>
 
-          {/* Submit Action Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="vr-room__submit"
-          >
-            {loading ? (
-              <>
-                <span className="vr-room__spinner" aria-hidden="true" />
-                <span>{isCreate ? 'Initializing Vault Enclave...' : 'Authenticating to Room...'}</span>
-              </>
-            ) : (
-              <>
-                <span>{isCreate ? 'Deploy Secure Room' : 'Join Encrypted Room'}</span>
-                <ArrowRight size={16} aria-hidden="true" />
-              </>
-            )}
-          </button>
-        </form>
+          {/* Join Mode Enclave Security Context */}
+          {!isCreate && (
+            <div className="vr-room__join-enclave-card" role="region" aria-label="Zero Knowledge Enclave Security">
+              <div className="vr-room__join-enclave-top">
+                <div className="vr-room__join-enclave-title">
+                  <ShieldCheck size={13} className="text-[#10bfa5]" aria-hidden="true" />
+                  <span>Peer-to-Peer Enclave Verification</span>
+                </div>
+                <span className="vr-room__join-enclave-tag">ZERO-KNOWLEDGE</span>
+              </div>
+              <p className="vr-room__join-enclave-desc">
+                Keys derive in local browser memory via PBKDF2 (100,000 rounds). The server never sees your passphrase or decrypted room content.
+              </p>
+              <div className="vr-room__join-enclave-chips">
+                <span><LockKeyhole size={10} aria-hidden="true" /> Client Encrypted</span>
+                <span><Cpu size={10} aria-hidden="true" /> AES-256-GCM</span>
+                <span><Users size={10} aria-hidden="true" /> Waiting Room Gate</span>
+              </div>
+            </div>
+          )}
 
-        {/* Card Footer */}
-        <footer className="vr-room__footer">
-          <div className="vr-room__footer-left">
-            <LockKeyhole size={12} aria-hidden="true" />
-            <span>End-to-End Encrypted · Zero-Knowledge</span>
           </div>
-          <div className="vr-room__footer-right">
-            <span>AES-256-GCM · PBKDF2</span>
+
+          {/* Sticky Actions & Footer */}
+          <div className="vr-room__form-actions">
+            <button
+              type="submit"
+              disabled={loading}
+              className="vr-room__submit"
+            >
+              {loading ? (
+                <>
+                  <span className="vr-room__spinner" aria-hidden="true" />
+                  <span>{isCreate ? 'Initializing Vault Enclave...' : 'Authenticating to Room...'}</span>
+                </>
+              ) : (
+                <>
+                  <span>{isCreate ? 'Deploy Secure Room' : 'Join Encrypted Room'}</span>
+                  <ArrowRight size={16} aria-hidden="true" />
+                </>
+              )}
+            </button>
+
+            <footer className="vr-room__footer">
+              <div className="vr-room__footer-left">
+                <LockKeyhole size={12} aria-hidden="true" />
+                <span>End-to-End Encrypted · Zero-Knowledge</span>
+              </div>
+              <div className="vr-room__footer-right">
+                <span>AES-256-GCM · PBKDF2</span>
+              </div>
+            </footer>
           </div>
-        </footer>
+        </form>
       </section>
     </div>
   );
