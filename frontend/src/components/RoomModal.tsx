@@ -319,6 +319,17 @@ export const RoomModal: React.FC<RoomModalProps> = ({
     )
   ));
 
+  // Enforce native dropdown arrow suppression across all browser engines
+  useEffect(() => {
+    const selects = document.querySelectorAll<HTMLSelectElement>('.vr-room select, .vr-room__select');
+    selects.forEach((select) => {
+      select.style.setProperty('-webkit-appearance', 'none', 'important');
+      select.style.setProperty('-moz-appearance', 'none', 'important');
+      select.style.setProperty('appearance', 'none', 'important');
+      select.style.setProperty('background-image', 'none', 'important');
+    });
+  }, [mode, showAdvancedSecurity]);
+
   return (
     <div className="vr-room" role="dialog" aria-modal="true" aria-labelledby="vr-room-heading">
       {/* Background with user-provided artwork & dark overlay */}

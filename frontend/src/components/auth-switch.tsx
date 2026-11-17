@@ -103,7 +103,10 @@ export default function AuthSwitch({ onAuthenticate, notification }: AuthSwitchP
             <p className="vr-auth__kicker">
               <span className="vr-auth__kicker-dot" /> PRIVATE WORKSPACE
             </p>
-            <h1>Your work. Your space.<br /><em>Securely connected.</em></h1>
+            <h1>
+              <span className="vr-auth__title-line">Your work. Your space.</span>
+              <span className="vr-auth__title-line"><em>Securely connected.</em></span>
+            </h1>
             <p className="vr-auth__lede">
               A private workspace where your team can write, share and collaborate on documents securely.
             </p>

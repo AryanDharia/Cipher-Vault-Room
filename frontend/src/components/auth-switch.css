@@ -182,12 +182,17 @@
 }
 
 .vr-auth__story-copy h1 {
-  font-size: clamp(2rem, 3.2vw, 2.75rem);
-  line-height: 1.1;
+  font-size: clamp(1.45rem, 2.2vw, 2.05rem);
+  line-height: 1.18;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.025em;
   color: #fff;
   margin: 0 0 16px 0;
+}
+
+.vr-auth__title-line {
+  display: block;
+  white-space: nowrap;
 }
 
 .vr-auth__story-copy h1 em {
@@ -539,11 +544,36 @@
   .vr-auth__layout {
     grid-template-columns: 1fr;
     min-height: auto;
+    max-width: 540px;
   }
   .vr-auth__story {
+    display: flex;
+    padding: 24px 24px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--vr-border);
+  }
+  .vr-auth__story-copy {
+    margin-top: 14px;
+  }
+  .vr-auth__story-copy h1 {
+    font-size: 1.45rem;
+    line-height: 1.25;
+  }
+  .vr-auth__lede {
+    font-size: 0.88rem;
+    line-height: 1.45;
+  }
+  .vr-auth__highlights {
+    margin: 14px 0 0;
+    gap: 10px;
+  }
+  .vr-auth__highlights li {
+    font-size: 0.85rem;
+  }
+  .vr-auth__story-foot {
     display: none;
   }
   .vr-auth__panel {
-    padding: 28px 20px;
+    padding: 24px 20px 28px;
   }
 }
